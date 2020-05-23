@@ -1,9 +1,10 @@
-QT       += core gui
+QT       += core gui network
 
 greaterThan(QT_MAJOR_VERSION, 4): QT += widgets
 
-CONFIG += c++11
+CONFIG += c++17
 
+LIBS += -L/usr/lib//usr/lib/x86_64-linux-gnu/ -lcryptopp
 # The following define makes your compiler emit warnings if you use
 # any Qt feature that has been marked deprecated (the exact warnings
 # depend on your compiler). Please consult the documentation of the
@@ -16,11 +17,18 @@ DEFINES += QT_DEPRECATED_WARNINGS
 #DEFINES += QT_DISABLE_DEPRECATED_BEFORE=0x060000    # disables all the APIs deprecated before Qt 6.0.0
 
 SOURCES += \
-    main.cpp \
-    filesharingclient.cpp
+    FileSharingClient/filesharingclient.cpp \
+    TcpClient/tcpclient.cpp \
+    eccryptopp/eccryptopp.cpp \
+    util/util.cpp \
+    main.cpp
 
 HEADERS += \
-    filesharingclient.h
+    FileSharingClient/filesharingclient.h \
+    TcpClient/tcpclient.h \
+    eccryptopp/eccryptopp.h \
+    util/util.h \
+    ui_main.h
 
 # Default rules for deployment.
 qnx: target.path = /tmp/$${TARGET}/bin
