@@ -2,6 +2,7 @@ package tcp
 
 import (
 	"bytes"
+	"encoding/binary"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -67,7 +68,7 @@ func handleConn(conn *net.TCPConn) {
 
 	err := serverHandshake(conn, &ec)
 	if err != nil {
-		log.Printf("Can't make handshake with %s\n", conn.RemoteAddr().String())
+		log.Printf("Can't make handshake with %s.\nDetails: %v", conn.RemoteAddr().String(), err)
 		return
 	}
 
@@ -140,7 +141,7 @@ func handleConn(conn *net.TCPConn) {
 			break
 		}
 
-		log.Printf("Response sended to %s", connectionInfo.remoteAddress)
+		log.Printf("Response sent to %s", connectionInfo.remoteAddress)
 
 		// log.Printf("Got from %s: %s(%d) length: %d", remoteAddress, string(decryptedData[4:]), total, length)
 	}
@@ -238,6 +239,12 @@ func intToByteSlice(value int) []byte {
 	return []byte(strconv.Itoa(value))
 }
 
+func intToByteRepresentation(value uint32) []byte {
+	ret := make([]byte, 4)
+	binary.BigEndian.PutUint32(ret, value)
+	return ret
+}
+
 func createErrorResponse(command, errNumber byte) []byte {
 	resp := make([]byte, 2)
 	resp[0] = command
@@ -295,6 +302,7 @@ func getFileList(info *clientInfo) []byte {
 		if file.IsDir() {
 			fileListResponse = append(fileListResponse, 'd')
 		} else {
+			fileListResponse = append(fileListResponse, intToByteRepresentation(uint32(file.Size()))...)
 			fileListResponse = append(fileListResponse, 'f')
 		}
 		fileListResponse = append(fileListResponse, '#')
