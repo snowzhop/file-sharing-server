@@ -48,6 +48,7 @@ public:
         tableWidget->setSelectionBehavior(QTableWidget::SelectRows);
         tableWidget->setSelectionMode(QAbstractItemView::SingleSelection);
         tableWidget->setEditTriggers(QAbstractItemView::NoEditTriggers);
+        tableWidget->setContextMenuPolicy(Qt::CustomContextMenu);
         mainLayout->addWidget(tableWidget);
 
         toolBar = new QToolBar(centralWidget);

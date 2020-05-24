@@ -53,6 +53,7 @@ private slots:
     void connectedSlot();
     void readyReadSlot();
 
+    void showContextMenuSlot(const QPoint& p);
     void doubleClickSlot(int row);
     void getFileListRequestSlot();
 

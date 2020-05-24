@@ -4,6 +4,7 @@
 #include <QDebug>
 #include <QTableWidgetItem>
 #include <QCommonStyle>
+#include <QMenu>
 
 #include <iostream>
 
@@ -23,6 +24,8 @@ FileSharingClient::FileSharingClient(QWidget *parent)
 
     connect(&tcpClient, &TcpClient::connected, this, &FileSharingClient::connectedSlot);
     connect(&tcpClient, &TcpClient::readyRead, this, &FileSharingClient::readyReadSlot);
+
+    connect(ui->tableWidget, &QTableWidget::customContextMenuRequested, this, &FileSharingClient::showContextMenuSlot);
 }
 
 FileSharingClient::~FileSharingClient() {
@@ -101,6 +104,25 @@ void FileSharingClient::getFileListRequestSlot() {
     } catch (const std::exception& ex) {
         qDebug() << "Encrypt and send exception:" << ex.what();
     }
+}
+
+void FileSharingClient::showContextMenuSlot(const QPoint& point) {
+    QMenu* contextMenu = new QMenu(this);
+
+    QAction* renameFile = new QAction("Rename", this);
+    QAction* downloadFile = new QAction("Download", this);
+    QAction* deleteFile = new QAction("Delete", this);
+
+    /*
+     * Here must be connections
+     * */
+
+    contextMenu->addAction(renameFile);
+    contextMenu->addAction(downloadFile);
+    contextMenu->addSeparator();
+    contextMenu->addAction(deleteFile);
+
+    contextMenu->popup(ui->tableWidget->viewport()->mapToGlobal(point));
 }
 
 void FileSharingClient::doubleClickSlot(int row) {
