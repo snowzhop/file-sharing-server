@@ -3,6 +3,7 @@
 
 #include <QDebug>
 #include <QTableWidgetItem>
+#include <QCommonStyle>
 
 #include <iostream>
 
@@ -15,14 +16,10 @@ FileSharingClient::FileSharingClient(QWidget *parent)
 
     mainBuffer = new char[MAIN_BUFFER_SIZE];
 
-    ui->tableWidget->setColumnCount(3);
-    ui->tableWidget->setHorizontalHeaderLabels(QStringList() << "File name" << "Size" << "Type");
-    ui->tableWidget->setSortingEnabled(false);
-    ui->tableWidget->setSelectionBehavior(QTableWidget::SelectRows);
-
-
     connect(ui->connectToServerButton, &QPushButton::pressed, this, &FileSharingClient::connectToServerSlot);
     connect(ui->testButton, &QPushButton::pressed, this, &FileSharingClient::testRequestSlot);
+
+    connect(ui->tableWidget, &QTableWidget::cellDoubleClicked, this, &FileSharingClient::doubleClickSlot);
 
     connect(&tcpClient, &TcpClient::connected, this, &FileSharingClient::connectedSlot);
     connect(&tcpClient, &TcpClient::readyRead, this, &FileSharingClient::readyReadSlot);
@@ -34,7 +31,6 @@ FileSharingClient::~FileSharingClient() {
 }
 
 void FileSharingClient::connectToServerSlot() {
-    qDebug() << "connection to host";
     tcpClient.connectToHost("127.0.0.1", 9999);
 }
 
@@ -63,6 +59,8 @@ void FileSharingClient::readyReadSlot() {
         }
         QByteArray secret(reinterpret_cast<const char*>(tcpClient.getSecretKey()), 32);
         qDebug() << "Secret key:" << secret.toHex();
+
+        getFileListRequestSlot();
         gotSecretKey = true;
         return;
     }
@@ -88,6 +86,12 @@ void FileSharingClient::readyReadSlot() {
 }
 
 void FileSharingClient::testRequestSlot() {
+    qDebug() << "Empty test request";
+}
+
+/* ---- REQUEST CREATING FUNCTIONS ---- */
+
+void FileSharingClient::getFileListRequestSlot() {
     u_char* request = new u_char(2);
     request[0] = 0;
     request[1] = 0;
@@ -98,6 +102,39 @@ void FileSharingClient::testRequestSlot() {
         qDebug() << "Encrypt and send exception:" << ex.what();
     }
 }
+
+void FileSharingClient::doubleClickSlot(int row) {
+    qDebug() << "Got row:" << row;
+
+    auto data = ui->tableWidget->item(row, 0)->data(Qt::DisplayRole);
+    QString dirName;
+    if (data.isValid() && data.toString().length() > 0) {
+        dirName = data.toString();
+    } else {
+        qDebug() << "doubleClickSlot: Error data.toString()";
+        return;
+    }
+
+    data = ui->tableWidget->item(row, 2)->data(Qt::DisplayRole);
+
+    if (data.isValid() && data.toString().length() > 0) {
+        if (data.toString()[0] == 'D') {
+            QByteArray request;
+            QDataStream stream(&request, QIODevice::WriteOnly);
+            stream << static_cast<u_char>(Command::changeDirCommand);
+            stream.writeRawData("\0\0\0\0", 4);
+            stream.writeRawData(dirName.toStdString().c_str(), dirName.length());
+
+            try {
+                tcpClient.encryptAndSend(reinterpret_cast<const u_char*>(request.data()), request.length());
+            } catch (const std::exception& ex) {
+                qDebug() << "changeDir exception:" << ex.what();
+            }
+        }
+    }
+}
+
+/* ---- MAIN PROCESS FUNCTION ---- */
 
 void FileSharingClient::responseProcessing(const u_char *data, size_t length) {
     if (length > 2) {
@@ -112,6 +149,12 @@ void FileSharingClient::responseProcessing(const u_char *data, size_t length) {
                 break;
             }
             case Command::changeDirCommand: {
+                ui->tableWidget->setRowCount(0);
+                QByteArray files;
+                QDataStream stream(&files, QIODevice::WriteOnly);
+                stream.writeRawData(reinterpret_cast<const char*>(data+2), length-2);
+                qDebug() << files;
+                showFileList(files);
                 break;
             }
             default: {
@@ -123,6 +166,8 @@ void FileSharingClient::responseProcessing(const u_char *data, size_t length) {
         }
     }
 }
+
+/* ----- PROCESSING FUNCTIONS ----- */
 
 void FileSharingClient::showFileList(const QByteArray& rawFileList) {
     auto fileList = rawFileList.split('#');
@@ -136,8 +181,10 @@ void FileSharingClient::showFileList(const QByteArray& rawFileList) {
     for (int i = 0; i < fileList.size(); ++i ) {  // Classic for-cycle for delegate setting
         if (fileList[i].length() > 0) {
             int length = fileList[i].length();
+            QTableWidgetItem* newItem = new QTableWidgetItem();
             if (fileList[i][length-1] == 'd') {
-                QTableWidgetItem* newItem = new QTableWidgetItem;
+
+                newItem->setIcon(QCommonStyle().standardIcon(QStyle::SP_DirIcon));
                 newItem->setText(fileList[i].chopped(1));
                 newItem->setToolTip(fileList[i].chopped(1));
 
@@ -145,7 +192,8 @@ void FileSharingClient::showFileList(const QByteArray& rawFileList) {
 
                 ui->tableWidget->setItem(i+1, 2, new QTableWidgetItem("Directory"));
             } else if (fileList[i][length-1] == 'f') {
-                QTableWidgetItem* newItem = new QTableWidgetItem;
+
+                newItem->setIcon(QCommonStyle().standardIcon(QStyle::SP_FileIcon));
                 newItem->setText(fileList[i].chopped(SERVICE_INFO_SIZE));
                 newItem->setToolTip(fileList[i].chopped(SERVICE_INFO_SIZE));
 

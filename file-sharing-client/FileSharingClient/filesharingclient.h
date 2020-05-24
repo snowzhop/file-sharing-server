@@ -53,6 +53,9 @@ private slots:
     void connectedSlot();
     void readyReadSlot();
 
+    void doubleClickSlot(int row);
+    void getFileListRequestSlot();
+
     void testRequestSlot();
 
 public:
