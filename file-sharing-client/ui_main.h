@@ -42,6 +42,12 @@ public:
         tableWidget->verticalHeader()->setVisible(false);
         tableWidget->verticalHeader()->setSectionResizeMode(QHeaderView::Fixed);
         tableWidget->verticalHeader()->setDefaultSectionSize(16);
+        tableWidget->setColumnCount(3);
+        tableWidget->setHorizontalHeaderLabels(QStringList() << "File name" << "Size" << "Type");
+        tableWidget->setSortingEnabled(false);
+        tableWidget->setSelectionBehavior(QTableWidget::SelectRows);
+        tableWidget->setSelectionMode(QAbstractItemView::SingleSelection);
+        tableWidget->setEditTriggers(QAbstractItemView::NoEditTriggers);
         mainLayout->addWidget(tableWidget);
 
         toolBar = new QToolBar(centralWidget);
