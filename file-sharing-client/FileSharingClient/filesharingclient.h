@@ -46,7 +46,7 @@ private:
     void sendMessage(const u_char* data, size_t length);
     void responseProcessing(const u_char* data, size_t length);
 
-    void showFileList(const QByteArray& rawFileList);
+    void showFileList(const u_char* rawFileList, size_t length);
 
 private slots:
     void connectToServerSlot();

@@ -141,20 +141,12 @@ void FileSharingClient::responseProcessing(const u_char *data, size_t length) {
         if (!data[1]) {
             switch (static_cast<Command>(data[0])) {
             case Command::getFileListCommand: {
-                QByteArray files;
-                QDataStream stream(&files, QIODevice::WriteOnly);
-                stream.writeRawData(reinterpret_cast<const char*>(data+2), length-2);
-                qDebug() << files;
-                showFileList(files);
+                showFileList(data+2, length-2);
                 break;
             }
             case Command::changeDirCommand: {
                 ui->tableWidget->setRowCount(0);
-                QByteArray files;
-                QDataStream stream(&files, QIODevice::WriteOnly);
-                stream.writeRawData(reinterpret_cast<const char*>(data+2), length-2);
-                qDebug() << files;
-                showFileList(files);
+                showFileList(data+2, length-2);
                 break;
             }
             default: {
@@ -169,8 +161,13 @@ void FileSharingClient::responseProcessing(const u_char *data, size_t length) {
 
 /* ----- PROCESSING FUNCTIONS ----- */
 
-void FileSharingClient::showFileList(const QByteArray& rawFileList) {
-    auto fileList = rawFileList.split('#');
+void FileSharingClient::showFileList(const u_char* rawFileList, size_t length) {
+    QByteArray allFiles;
+    QDataStream stream(&allFiles, QIODevice::WriteOnly);
+    stream.writeRawData(reinterpret_cast<const char*>(rawFileList), length);
+    qDebug() << allFiles;
+
+    auto fileList = allFiles.split('#');
 
     ui->tableWidget->setRowCount(fileList.length() + 1);
 
