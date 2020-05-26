@@ -48,6 +48,8 @@ private:
 
     void showFileList(const u_char* rawFileList, size_t length);
 
+    const char* getAuthToken();
+
 private slots:
     void connectToServerSlot();
     void connectedSlot();
@@ -56,6 +58,7 @@ private slots:
     void showContextMenuSlot(const QPoint& p);
     void doubleClickSlot(int row);
     void getFileListRequestSlot();
+    void renameFileRequestSlot();
 
     void testRequestSlot();
 

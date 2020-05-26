@@ -37,6 +37,11 @@ void FileSharingClient::connectToServerSlot() {
     tcpClient.connectToHost("127.0.0.1", 9999);
 }
 
+const char* FileSharingClient::getAuthToken() {
+    const char* ret = "\0\0\0\0";
+    return ret;
+}
+
 void FileSharingClient::connectedSlot() {
     qDebug() << "Connected to" << tcpClient.peerName();
     sendMessage(tcpClient.getPackedPublicKey(), 66);
@@ -116,13 +121,37 @@ void FileSharingClient::showContextMenuSlot(const QPoint& point) {
     /*
      * Here must be connections
      * */
+    connect(renameFile, &QAction::triggered, this, &FileSharingClient::renameFileRequestSlot);
 
-    contextMenu->addAction(renameFile);
+
     contextMenu->addAction(downloadFile);
+    contextMenu->addAction(renameFile);
     contextMenu->addSeparator();
     contextMenu->addAction(deleteFile);
 
     contextMenu->popup(ui->tableWidget->viewport()->mapToGlobal(point));
+}
+
+void FileSharingClient::renameFileRequestSlot() {
+    auto item = ui->tableWidget->selectedItems();
+    auto fileName = item[0]->data(Qt::DisplayRole).toString();
+
+    qDebug() << "fileName:" << fileName << "\tlen:" << fileName.length();
+
+    QByteArray request;
+    QDataStream stream(&request, QIODevice::WriteOnly);
+    stream << static_cast<u_char>(Command::renameFileCommand);
+    stream.writeRawData(getAuthToken(), 4);
+    stream.writeRawData(fileName.toStdString().c_str(), fileName.length());
+    stream.writeRawData("#", 1);
+    fileName.append("_renamed");
+    stream.writeRawData(fileName.toStdString().c_str(), fileName.length());
+
+    try {
+        tcpClient.encryptAndSend(reinterpret_cast<const u_char*>(request.data()), request.length());
+    } catch (const std::exception& ex) {
+        qDebug() << "renameFile exception:" << ex.what();
+    }
 }
 
 void FileSharingClient::doubleClickSlot(int row) {
@@ -144,7 +173,7 @@ void FileSharingClient::doubleClickSlot(int row) {
             QByteArray request;
             QDataStream stream(&request, QIODevice::WriteOnly);
             stream << static_cast<u_char>(Command::changeDirCommand);
-            stream.writeRawData("\0\0\0\0", 4);
+            stream.writeRawData(getAuthToken(), 4);  // TODO Temporary Solution
             stream.writeRawData(dirName.toStdString().c_str(), dirName.length());
 
             try {
@@ -167,6 +196,11 @@ void FileSharingClient::responseProcessing(const u_char *data, size_t length) {
                 break;
             }
             case Command::changeDirCommand: {
+                ui->tableWidget->setRowCount(0);
+                showFileList(data+2, length-2);
+                break;
+            }
+            case Command::renameFileCommand: {
                 ui->tableWidget->setRowCount(0);
                 showFileList(data+2, length-2);
                 break;
