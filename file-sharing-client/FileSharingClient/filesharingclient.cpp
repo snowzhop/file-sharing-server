@@ -122,6 +122,7 @@ void FileSharingClient::showContextMenuSlot(const QPoint& point) {
      * Here must be connections
      * */
     connect(renameFile, &QAction::triggered, this, &FileSharingClient::renameFileRequestSlot);
+    connect(deleteFile, &QAction::triggered, this, &FileSharingClient::deleteFileRequestSlot);
 
 
     contextMenu->addAction(downloadFile);
@@ -151,6 +152,23 @@ void FileSharingClient::renameFileRequestSlot() {
         tcpClient.encryptAndSend(reinterpret_cast<const u_char*>(request.data()), request.length());
     } catch (const std::exception& ex) {
         qDebug() << "renameFile exception:" << ex.what();
+    }
+}
+
+void FileSharingClient::deleteFileRequestSlot() {
+    auto items = ui->tableWidget->selectedItems();
+    auto fileName = items[0]->data(Qt::DisplayRole).toString();
+
+    QByteArray request;
+    QDataStream stream(&request, QIODevice::WriteOnly);
+    stream << static_cast<u_char>(Command::deleteFileCommand);
+    stream.writeRawData(getAuthToken(), 4);
+    stream.writeRawData(fileName.toStdString().c_str(), fileName.length());
+
+    try {
+        tcpClient.encryptAndSend(reinterpret_cast<const u_char*>(request.data()), request.length());
+    } catch (const std::exception& ex) {
+        qDebug() << "deleteFile exception:" << ex.what();
     }
 }
 
@@ -201,6 +219,11 @@ void FileSharingClient::responseProcessing(const u_char *data, size_t length) {
                 break;
             }
             case Command::renameFileCommand: {
+                ui->tableWidget->setRowCount(0);
+                showFileList(data+2, length-2);
+                break;
+            }
+            case Command::deleteFileCommand: {
                 ui->tableWidget->setRowCount(0);
                 showFileList(data+2, length-2);
                 break;

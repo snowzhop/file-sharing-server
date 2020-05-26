@@ -59,6 +59,7 @@ private slots:
     void doubleClickSlot(int row);
     void getFileListRequestSlot();
     void renameFileRequestSlot();
+    void deleteFileRequestSlot();
 
     void testRequestSlot();
 
