@@ -176,9 +176,9 @@ void FileSharingClient::doubleClickSlot(int row) {
     qDebug() << "Got row:" << row;
 
     auto data = ui->tableWidget->item(row, 0)->data(Qt::DisplayRole);
-    QString dirName;
+    QString fileName;
     if (data.isValid() && data.toString().length() > 0) {
-        dirName = data.toString();
+        fileName = data.toString();
     } else {
         qDebug() << "doubleClickSlot: Error data.toString()";
         return;
@@ -186,20 +186,26 @@ void FileSharingClient::doubleClickSlot(int row) {
 
     data = ui->tableWidget->item(row, 2)->data(Qt::DisplayRole);
 
+    QByteArray request;
+    QDataStream stream(&request, QIODevice::WriteOnly);
+
     if (data.isValid() && data.toString().length() > 0) {
         if (data.toString()[0] == 'D') {
-            QByteArray request;
-            QDataStream stream(&request, QIODevice::WriteOnly);
             stream << static_cast<u_char>(Command::changeDirCommand);
             stream.writeRawData(getAuthToken(), 4);  // TODO Temporary Solution
-            stream.writeRawData(dirName.toStdString().c_str(), dirName.length());
+            stream.writeRawData(fileName.toStdString().c_str(), fileName.length());
 
-            try {
-                tcpClient.encryptAndSend(reinterpret_cast<const u_char*>(request.data()), request.length());
-            } catch (const std::exception& ex) {
-                qDebug() << "changeDir exception:" << ex.what();
-            }
+        } else if (data.toString()[0] == 'F') {
+            stream << static_cast<u_char>(Command::downloadFileCommand);
+            stream.writeRawData(getAuthToken(), 4);
+            stream.writeRawData(fileName.toStdString().c_str(), fileName.length());
         }
+    }
+
+    try {
+        tcpClient.encryptAndSend(reinterpret_cast<const u_char*>(request.data()), request.length());
+    } catch (const std::exception& ex) {
+        qDebug() << "Double Click exception:" << ex.what();
     }
 }
 
@@ -209,28 +215,31 @@ void FileSharingClient::responseProcessing(const u_char *data, size_t length) {
     if (length > 2) {
         if (!data[1]) {
             switch (static_cast<Command>(data[0])) {
-            case Command::getFileListCommand: {
-                showFileList(data+2, length-2);
-                break;
-            }
-            case Command::changeDirCommand: {
-                ui->tableWidget->setRowCount(0);
-                showFileList(data+2, length-2);
-                break;
-            }
-            case Command::renameFileCommand: {
-                ui->tableWidget->setRowCount(0);
-                showFileList(data+2, length-2);
-                break;
-            }
-            case Command::deleteFileCommand: {
-                ui->tableWidget->setRowCount(0);
-                showFileList(data+2, length-2);
-                break;
-            }
-            default: {
+                case Command::getFileListCommand: {
+                    showFileList(data+2, length-2);
+                    break;
+                }
+                case Command::changeDirCommand: {
+                    ui->tableWidget->setRowCount(0);
+                    showFileList(data+2, length-2);
+                    break;
+                }
+                case Command::renameFileCommand: {
+                    ui->tableWidget->setRowCount(0);
+                    showFileList(data+2, length-2);
+                    break;
+                }
+                case Command::deleteFileCommand: {
+                    ui->tableWidget->setRowCount(0);
+                    showFileList(data+2, length-2);
+                    break;
+                }
+                case Command::downloadFileCommand: {
+                    qDebug() << "got downloadFileCommand";
 
-            }
+                }
+                default:
+                {}
             }
         } else {
             qDebug() << "Command:" << data[0] << "Answer:" << data[1];
