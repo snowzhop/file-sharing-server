@@ -9,6 +9,7 @@
 #include <QTableWidget>
 #include <QVBoxLayout>
 #include <QHeaderView>
+#include <QStatusBar>
 
 namespace UI {
 
@@ -20,6 +21,7 @@ public:
     QToolBar* toolBar;
     QPushButton* connectToServerButton;
     QPushButton* testButton;
+    QStatusBar* statusBar;
 
     const int width = 400;
     const int height = 300;
@@ -50,6 +52,10 @@ public:
         tableWidget->setEditTriggers(QAbstractItemView::NoEditTriggers);
         tableWidget->setContextMenuPolicy(Qt::CustomContextMenu);
         mainLayout->addWidget(tableWidget);
+        tableWidget->setDragEnabled(true);
+        tableWidget->setAcceptDrops(true);
+
+        statusBar = new QStatusBar(mainWindow);
 
         toolBar = new QToolBar(centralWidget);
         toolBar->setObjectName("toolBar");
@@ -65,6 +71,11 @@ public:
 
         mainWindow->addToolBar(toolBar);
         mainWindow->setCentralWidget(centralWidget);
+        mainWindow->setStatusBar(statusBar);
+    }
+
+    ~Ui_Main() {
+        delete centralWidget;
     }
 };
 
