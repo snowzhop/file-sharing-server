@@ -1,10 +1,13 @@
 #include "filesharingclient.h"
 #include "util/util.h"
+#include "TcpClient/downloadfiletask.h"
 
 #include <QDebug>
+#include <QThreadPool>
 #include <QTableWidgetItem>
 #include <QCommonStyle>
 #include <QMenu>
+#include <QMessageBox>
 
 #include <iostream>
 
@@ -16,6 +19,8 @@ FileSharingClient::FileSharingClient(QWidget *parent)
     this->show();
 
     mainBuffer = new char[MAIN_BUFFER_SIZE];
+
+    ui->tableWidget->installEventFilter(this);
 
     connect(ui->connectToServerButton, &QPushButton::pressed, this, &FileSharingClient::connectToServerSlot);
     connect(ui->testButton, &QPushButton::pressed, this, &FileSharingClient::testRequestSlot);
@@ -51,11 +56,10 @@ void FileSharingClient::sendMessage(const u_char* data, size_t length) {
 //    if (!gotSecretKey && (tcpClient.state() == TcpClient::ConnectedState)) {
     auto sent = tcpClient.write(reinterpret_cast<const char*>(data), length);
     qDebug() << "sent:" << sent;
-//    }
 }
 
 void FileSharingClient::readyReadSlot() {
-    qDebug() << "Bytes available:" << tcpClient.bytesAvailable();
+//    qDebug() << "Bytes available:" << tcpClient.bytesAvailable();
     if (!gotSecretKey && (tcpClient.state() == TcpClient::ConnectedState)) {
         char buffer[128];
         int allBytes = 0;
@@ -77,15 +81,14 @@ void FileSharingClient::readyReadSlot() {
 
     if (gotSecretKey && (tcpClient.state() == TcpClient::ConnectedState)) {
         size_t total = 0;
-//        char* cache = nullptr;
 
 
         while (tcpClient.bytesAvailable()) {
             readBytes = tcpClient.read(mainBuffer, MAIN_BUFFER_SIZE);
-            qDebug() << "readBytes:" << readBytes;
+//            qDebug() << "readBytes:" << readBytes;
             total += readBytes;
         }
-        qDebug() << "total:" << total;
+//        qDebug() << "total:" << total;
     }
 
     QByteArray decryptedData = tcpClient.decryptData(reinterpret_cast<const u_char*>(mainBuffer), readBytes);
@@ -98,6 +101,16 @@ void FileSharingClient::testRequestSlot() {
 }
 
 /* ---- REQUEST CREATING FUNCTIONS ---- */
+
+bool FileSharingClient::eventFilter(QObject* target, QEvent* event) {
+    if (target == ui->tableWidget) {
+        switch (event->type()) {
+            case QEvent::Drop: {
+                qDebug() << "DROP";
+            }
+        }
+    }
+}
 
 void FileSharingClient::getFileListRequestSlot() {
     u_char* request = new u_char(2);
@@ -137,7 +150,7 @@ void FileSharingClient::renameFileRequestSlot() {
     auto item = ui->tableWidget->selectedItems();
     auto fileName = item[0]->data(Qt::DisplayRole).toString();
 
-    qDebug() << "fileName:" << fileName << "\tlen:" << fileName.length();
+//    qDebug() << "fileName:" << fileName << "\tlen:" << fileName.length();
 
     QByteArray request;
     QDataStream stream(&request, QIODevice::WriteOnly);
@@ -173,7 +186,6 @@ void FileSharingClient::deleteFileRequestSlot() {
 }
 
 void FileSharingClient::doubleClickSlot(int row) {
-    qDebug() << "Got row:" << row;
 
     auto data = ui->tableWidget->item(row, 0)->data(Qt::DisplayRole);
     QString fileName;
@@ -209,6 +221,16 @@ void FileSharingClient::doubleClickSlot(int row) {
     }
 }
 
+void FileSharingClient::infoProcessingSlot(const QString& info) {
+    ui->statusBar->showMessage(info, STATUS_MESSAGE_TIMEOUT);
+    qDebug() << "Info from other thread:" << info;
+}
+
+void FileSharingClient::errorProcessingSlot(const QString& err) {
+    QMessageBox::critical(this, "Error", err);
+    qDebug() << "Error from other thread:" << err;
+}
+
 /* ---- MAIN PROCESS FUNCTION ---- */
 
 void FileSharingClient::responseProcessing(const u_char *data, size_t length) {
@@ -235,8 +257,7 @@ void FileSharingClient::responseProcessing(const u_char *data, size_t length) {
                     break;
                 }
                 case Command::downloadFileCommand: {
-                    qDebug() << "got downloadFileCommand";
-
+                    downloadFile(data+2, length-2);
                 }
                 default:
                 {}
@@ -291,4 +312,26 @@ void FileSharingClient::showFileList(const u_char* rawFileList, size_t length) {
             ui->tableWidget->removeRow(ui->tableWidget->rowCount() - 1);
         }
     }
+}
+
+void FileSharingClient::downloadFile(const u_char *rawFileInfo, size_t length) {
+    QByteArray fileInfo;
+    QDataStream stream(&fileInfo, QIODevice::WriteOnly);
+    stream.writeRawData(reinterpret_cast<const char*>(rawFileInfo), length);
+
+    auto fileInfoList = fileInfo.split('#');
+
+    QString fileName(fileInfoList[0]);
+    u_short port = fileInfoList[1].toUShort(nullptr, 10);
+
+    QString tmpDir = "/home/polycarp/Test_dir/";
+
+
+    DownloadFileTask* downloadTask = new DownloadFileTask(tmpDir.append(fileName), tcpClient.peerName(), port, nullptr);
+    connect(downloadTask, &DownloadFileTask::information, this, &FileSharingClient::infoProcessingSlot);
+    connect(downloadTask, &DownloadFileTask::error, this, &FileSharingClient::errorProcessingSlot);
+
+    downloadTask->setAutoDelete(true);
+    QThreadPool::globalInstance()->start(downloadTask);
+
 }

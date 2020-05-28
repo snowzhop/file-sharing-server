@@ -2,7 +2,7 @@
 #define FILESHARINGCLIENT_H
 
 #include <QMainWindow>
-#include <QStringListModel>
+#include <QEvent>
 
 #include "ui_main.h"
 #include "TcpClient/tcpclient.h"
@@ -41,12 +41,16 @@ private:
 
     const int MAIN_BUFFER_SIZE = 1024*1024+16;
     const int SERVICE_INFO_SIZE = 5;
+    const int STATUS_MESSAGE_TIMEOUT = 10000; // milliseconds
 
     void connectToServer(const QString address, const QString port);
     void sendMessage(const u_char* data, size_t length);
     void responseProcessing(const u_char* data, size_t length);
 
     void showFileList(const u_char* rawFileList, size_t length);
+    void downloadFile(const u_char* rawFileInfo, size_t length);
+
+    bool eventFilter(QObject* target, QEvent* event);
 
     const char* getAuthToken();
 
@@ -60,6 +64,9 @@ private slots:
     void getFileListRequestSlot();
     void renameFileRequestSlot();
     void deleteFileRequestSlot();
+
+    void infoProcessingSlot(const QString& info);
+    void errorProcessingSlot(const QString& err);
 
     void testRequestSlot();
 
