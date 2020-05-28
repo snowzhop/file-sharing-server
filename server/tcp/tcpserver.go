@@ -164,7 +164,7 @@ func serverHandshake(conn *net.TCPConn, ec *eccrypto.ECcrypto) error {
 		return fmt.Errorf("connection timeout")
 	}
 	if n != handshakeBufferSize {
-		return fmt.Errorf("wrong data (n != handshakeBufferSize)")
+		return fmt.Errorf("wrong data (n(%d) != handshakeBufferSize(%d))", n, handshakeBufferSize)
 	}
 	conn.SetReadDeadline(time.Unix(0, 0))
 
@@ -579,6 +579,8 @@ func sendFile(listener *net.TCPListener, fileToSend string) {
 	}
 	defer conn.Close()
 
+	log.Printf("(%s)Connected from %s", listenerAddr, conn.RemoteAddr().String())
+
 	remoteAddr := conn.RemoteAddr().String()
 
 	file, err := os.Open(fileToSend)
@@ -590,6 +592,10 @@ func sendFile(listener *net.TCPListener, fileToSend string) {
 
 	var localEc eccrypto.ECcrypto
 	err = serverHandshake(conn, &localEc)
+	if err != nil {
+		log.Printf("Failed handshake with %s.\nDetails: %v", conn.RemoteAddr().String(), err)
+		return
+	}
 
 	log.Printf("Local shared: %x", localEc.Shared())
 
@@ -607,7 +613,7 @@ func sendFile(listener *net.TCPListener, fileToSend string) {
 			return
 		}
 
-		log.Printf("\tREAD: %d", n)
+		log.Printf("\tREAD FROM FILE: %d", n)
 
 		/* 2 */
 		encryptedData, err := localEc.Encrypt(sendingBuffer[:n])
