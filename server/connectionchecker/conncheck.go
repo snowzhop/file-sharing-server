@@ -19,6 +19,11 @@ const (
 	serverBuffer  = 24
 	headerLength  = 5
 	bigBufferSize = 1024*1024 + 16
+
+	connectionAttempts = 5
+	testMessage        = "Test"
+	testMsgBufLen      = 30
+	expectedMsgBufLen  = len(testMessage) + 16
 )
 
 var ec eccrypto.ECcrypto
@@ -40,7 +45,11 @@ func main() {
 	}
 	defer conn.Close()
 
-	clientHandshake(&conn, &ec)
+	err = clientHandshake(&conn, &ec)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Failed handshake: %v\n", err)
+		os.Exit(1)
+	}
 
 	input := bufio.NewScanner(os.Stdin)
 
@@ -166,51 +175,99 @@ func responseProcessing(data []byte) {
 	}
 }
 
-func clientHandshake(conn *net.Conn, ecdh *eccrypto.ECcrypto) {
+func clientHandshake(conn *net.Conn, ecdh *eccrypto.ECcrypto) error {
 	buffer := make([]byte, 66)
-	pubKey, err := ecdh.GenerateKeyPair()
+	testBuf := make([]byte, testMsgBufLen)
+	var err error
+
+	for i := 0; i < connectionAttempts; i++ {
+		log.Printf("Handshake attempt #%d", i+1)
+
+		pubKey, err := ecdh.GenerateKeyPair()
+		if err != nil {
+			return fmt.Errorf("Error: GenerateKeyPair(): %v", err)
+			// os.Exit(1)
+		}
+		packedPubKey := eccrypto.PackKey(pubKey.X, pubKey.Y)
+
+		n, err := (*conn).Write(packedPubKey)
+		if err != nil {
+			return fmt.Errorf("Error: Writing packedKey: %v", err)
+			// os.Exit(1)
+		}
+		if n != len(packedPubKey) {
+			return fmt.Errorf("Error: data not sent completely")
+			// os.Exit(1)
+		}
+
+		(*conn).SetReadDeadline(time.Now().Add(time.Second * 5))
+
+		n, err = (*conn).Read(buffer)
+		if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
+			return fmt.Errorf("Timeout error: %v", netErr)
+			// os.Exit(1)
+		} else if err != nil {
+			return fmt.Errorf("Error: %v", err)
+			// os.Exit(1)
+		}
+
+		// (*conn).SetReadDeadline(time.Now().Add(time.Minute * 5))
+
+		x, y, err := eccrypto.UnpackKey(buffer[:n])
+		if err != nil {
+			return fmt.Errorf("Error: Can't unpack key: %v", err)
+			// os.Exit(1)
+		}
+
+		err = ecdh.CalculateSharedKey(x, y)
+		if err != nil {
+			return fmt.Errorf("Error: can't calculate shared key: %v", err)
+			// os.Exit(1)
+		}
+
+		/* Test message */
+		(*conn).SetReadDeadline(time.Now().Add(time.Second * 5))
+		n, err = (*conn).Read(testBuf)
+		if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
+			return fmt.Errorf("Error: reading test msg timeout")
+			// os.Exit(1)
+		}
+		if n != expectedMsgBufLen {
+			fmt.Printf("Wrong test msg len: n(%d) != expectedMsgBufLen(%d)\n", n, expectedMsgBufLen)
+			continue
+		}
+		(*conn).SetReadDeadline(time.Now().Add(time.Minute * 5))
+
+		decryptedTestMsg, err := ecdh.Decrypt(testBuf[:n])
+		if err != nil {
+			fmt.Printf("Can't decrypt test msg: %v\n", err)
+			continue
+		}
+
+		encryptedTestMsg, err := ecdh.Encrypt([]byte(testMessage))
+		if err != nil {
+			return fmt.Errorf("Can't encrypt test msg: %v", err)
+			// os.Exit(1)
+		}
+
+		_, err = (*conn).Write(encryptedTestMsg)
+		if err != nil {
+			return fmt.Errorf("Can't send encrypted test msg: %v", err)
+			// os.Exit(1)
+		}
+
+		if bytes.Compare(decryptedTestMsg, []byte(testMessage)) == 0 {
+			break
+		}
+	}
+
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error: GenerateKeyPair(): %v\n", err)
-		os.Exit(1)
-	}
-	packedPubKey := eccrypto.PackKey(pubKey.X, pubKey.Y)
-
-	n, err := (*conn).Write(packedPubKey)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error: Writing packedKey: %v\n", err)
-		os.Exit(1)
-	}
-	if n != len(packedPubKey) {
-		fmt.Fprintf(os.Stderr, "Error: data not sent completely\n")
-		os.Exit(1)
-	}
-
-	(*conn).SetReadDeadline(time.Now().Add(time.Second * 5))
-
-	n, err = (*conn).Read(buffer)
-	if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
-		fmt.Fprintf(os.Stderr, "Error: %v\n", netErr)
-		os.Exit(1)
-	} else if err != nil {
-		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-		os.Exit(1)
-	}
-
-	(*conn).SetReadDeadline(time.Now().Add(time.Minute * 5))
-
-	x, y, err := eccrypto.UnpackKey(buffer[:n])
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error: Can't unpack key: %v\n", err)
-		os.Exit(1)
-	}
-
-	err = ecdh.CalculateSharedKey(x, y)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error: can't calculate shared key: %v\n", err)
-		os.Exit(1)
+		return fmt.Errorf("Unexpected error: %v", err)
+		// os.Exit(1)
 	}
 
 	fmt.Printf("Shared key: %x\n", ecdh.Shared())
+	return nil
 }
 
 func printFileList(data []byte) {
@@ -241,7 +298,11 @@ func getFile(data []byte) {
 
 	var localEc eccrypto.ECcrypto
 
-	clientHandshake(&conn, &localEc)
+	err = clientHandshake(&conn, &localEc)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Handshake error: %v\n", err)
+		return
+	}
 	fmt.Printf("Local shared: %x\n", localEc.Shared())
 
 	file, err := os.Create("/home/polycarp/Temporary_files/" + string(fileName))
