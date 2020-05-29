@@ -19,7 +19,7 @@ const (
 	swapFileSuffix     = ".swp"
 	connectionAttempts = 5
 	testMessage        = "Test"
-	testMsgBufLen      = 30
+	testMsgBufLen      = 128
 	expectedMsgBufLen  = len(testMessage) + 16
 )
 
