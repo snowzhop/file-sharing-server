@@ -30,6 +30,8 @@ FileSharingClient::FileSharingClient(QWidget *parent)
     connect(&tcpClient, &TcpClient::connected, this, &FileSharingClient::connectedSlot);
     connect(&tcpClient, &TcpClient::readyRead, this, &FileSharingClient::readyReadSlot);
 
+    connect(ui->tableWidget, &MainTableWidget::dropRowSignal, this, &FileSharingClient::moveFileRequestSlot);
+
     connect(ui->tableWidget, &QTableWidget::customContextMenuRequested, this, &FileSharingClient::showContextMenuSlot);
 }
 
@@ -101,16 +103,6 @@ void FileSharingClient::testRequestSlot() {
 }
 
 /* ---- REQUEST CREATING FUNCTIONS ---- */
-
-bool FileSharingClient::eventFilter(QObject* target, QEvent* event) {
-    if (target == ui->tableWidget) {
-        switch (event->type()) {
-            case QEvent::Drop: {
-                qDebug() << "DROP";
-            }
-        }
-    }
-}
 
 void FileSharingClient::getFileListRequestSlot() {
     u_char* request = new u_char(2);
@@ -219,6 +211,10 @@ void FileSharingClient::doubleClickSlot(int row) {
     } catch (const std::exception& ex) {
         qDebug() << "Double Click exception:" << ex.what();
     }
+}
+
+void FileSharingClient::moveFileRequestSlot(int rowNumber) {
+    qDebug() << "target row:" << rowNumber;
 }
 
 void FileSharingClient::infoProcessingSlot(const QString& info) {

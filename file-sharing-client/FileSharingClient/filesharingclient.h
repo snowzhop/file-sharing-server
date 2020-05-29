@@ -50,8 +50,6 @@ private:
     void showFileList(const u_char* rawFileList, size_t length);
     void downloadFile(const u_char* rawFileInfo, size_t length);
 
-    bool eventFilter(QObject* target, QEvent* event);
-
     const char* getAuthToken();
 
 private slots:
@@ -64,6 +62,7 @@ private slots:
     void getFileListRequestSlot();
     void renameFileRequestSlot();
     void deleteFileRequestSlot();
+    void moveFileRequestSlot(int rowNumber);
 
     void infoProcessingSlot(const QString& info);
     void errorProcessingSlot(const QString& err);

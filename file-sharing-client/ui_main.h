@@ -11,13 +11,15 @@
 #include <QHeaderView>
 #include <QStatusBar>
 
+#include "MainTable/maintable.h"
+
 namespace UI {
 
 class Ui_Main {
 public:
     QWidget* centralWidget;
     QVBoxLayout* mainLayout;
-    QTableWidget* tableWidget;
+    MainTableWidget* tableWidget;
     QToolBar* toolBar;
     QPushButton* connectToServerButton;
     QPushButton* testButton;
@@ -38,7 +40,7 @@ public:
 
         mainLayout = new QVBoxLayout(centralWidget);
 
-        tableWidget = new QTableWidget(centralWidget);
+        tableWidget = new MainTableWidget(centralWidget);
         tableWidget->setShowGrid(false);
         tableWidget->horizontalHeader()->setStretchLastSection(true);
         tableWidget->verticalHeader()->setVisible(false);
