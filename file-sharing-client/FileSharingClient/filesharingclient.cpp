@@ -23,16 +23,6 @@ FileSharingClient::FileSharingClient(QWidget *parent)
     ui->tableWidget->installEventFilter(this);
 
     connect(ui->connectToServerButton, &QPushButton::pressed, this, &FileSharingClient::establishConnectionSlot);
-//    connect(ui->testButton, &QPushButton::pressed, this, &FileSharingClient::testRequestSlot);
-
-//    connect(ui->tableWidget, &QTableWidget::cellDoubleClicked, this, &FileSharingClient::doubleClickSlot);
-
-//    connect(&tcpClient, &TcpClient::connected, this, &FileSharingClient::connectedSlot);
-//    connect(&tcpClient, &TcpClient::readyRead, this, &FileSharingClient::readyReadSlot);
-
-//    connect(ui->tableWidget, &MainTableWidget::dropRowSignal, this, &FileSharingClient::moveFileRequestSlot);
-
-//    connect(ui->tableWidget, &QTableWidget::customContextMenuRequested, this, &FileSharingClient::showContextMenuSlot);
 }
 
 FileSharingClient::~FileSharingClient() {
@@ -128,15 +118,11 @@ void FileSharingClient::establishConnectionSlot() {
             infoProcessingSlot(QString("Connected to ").append(tcpClient.peerName()));
 
             connect(ui->testButton, &QPushButton::pressed, this, &FileSharingClient::testRequestSlot);
-
             connect(ui->tableWidget, &QTableWidget::cellDoubleClicked, this, &FileSharingClient::doubleClickSlot);
-
-//            connect(&tcpClient, &TcpClient::connected, this, &FileSharingClient::connectedSlot);
-            connect(&tcpClient, &TcpClient::readyRead, this, &FileSharingClient::readyReadSlot);
-
             connect(ui->tableWidget, &MainTableWidget::dropRowSignal, this, &FileSharingClient::moveFileRequestSlot);
-
             connect(ui->tableWidget, &QTableWidget::customContextMenuRequested, this, &FileSharingClient::showContextMenuSlot);
+
+            connect(&tcpClient, &TcpClient::readyRead, this, &FileSharingClient::readyReadSlot);
 
             getFileListRequestSlot();
             return;
@@ -168,23 +154,6 @@ void FileSharingClient::sendMessage(const u_char* data, size_t length) {
 
 void FileSharingClient::readyReadSlot() {
     qDebug() << "Bytes available:" << tcpClient.bytesAvailable();
-//    if (!tcpClient.isConnectionEncrypted() && (tcpClient.state() == TcpClient::ConnectedState)) {
-//        char buffer[128];
-//        int allBytes = 0;
-
-//        if (tcpClient.bytesAvailable() == 66) {
-//            allBytes = tcpClient.read(buffer, 128);
-//            tcpClient.calculateSecretKey(reinterpret_cast<unsigned char*>(buffer));
-//            qDebug() << "Secret key was calculated";
-//        }
-//        QByteArray secret(reinterpret_cast<const char*>(tcpClient.getSecretKey()), 32);
-//        qDebug() << "Secret key:" << secret.toHex();
-
-//        getFileListRequestSlot();
-////        gotSecretKey = true;
-//        tcpClient.switchConnectionToEncryptedMode();
-//        return;
-//    }
 
     int readBytes = 0;
 
@@ -194,10 +163,8 @@ void FileSharingClient::readyReadSlot() {
 
         while (tcpClient.bytesAvailable()) {
             readBytes = tcpClient.read(mainBuffer, MAIN_BUFFER_SIZE);
-//            qDebug() << "readBytes:" << readBytes;
             total += readBytes;
         }
-//        qDebug() << "total:" << total;
     }
 
     QByteArray decryptedData = tcpClient.decryptData(reinterpret_cast<const u_char*>(mainBuffer), readBytes);

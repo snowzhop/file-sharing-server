@@ -23,16 +23,10 @@ public:
     qint64 encryptAndSend(const u_char* data, size_t length);
     QByteArray decryptData(const u_char* data, size_t length);
 
-//    void switchConnectionToEncryptedMode();
-//    bool isConnectionEncrypted() const;
-
     // test function
     const unsigned char* getSecretKey();
 
 private:
-//    QTimer* reconnectTimer = nullptr;
-
-//    bool encryptedConn = false;
     EcCrypto* cryptographer = nullptr;
 };
 

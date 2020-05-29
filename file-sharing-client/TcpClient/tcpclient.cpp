@@ -38,11 +38,3 @@ void TcpClient::generateKeys() {
     delete cryptographer;
     cryptographer = new EcCrypto;
 }
-
-/*void TcpClient::switchConnectionToEncryptedMode() {
-    encryptedConn = true;
-}
-
-bool TcpClient::isConnectionEncrypted() const {
-    return encryptedConn;
-}*/
