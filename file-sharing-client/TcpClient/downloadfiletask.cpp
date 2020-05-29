@@ -26,51 +26,96 @@ void DownloadFileTask::run() {
     qDebug() << "address:" << m_address;
     qDebug() << "port:" << m_port;
     char buffer[BUFFER_FILE_SIZE];
-//    char cache[1024*1024];
     QByteArray b_cache;
     b_cache.reserve(BUFFER_FILE_SIZE);
 
     TcpClient socket;
 
     socket.connectToHost(m_address, m_port);
+    emit information("Connected to " + socket.peerAddress().toString());
 
-    if (socket.waitForConnected(5000)) {
-        emit information("Connected to " + socket.peerAddress().toString());
+    for (int i = 0; i < 5; ++i) {
+        qDebug() << "Handshake attempt:" << i+1;
+
+        if (socket.state() != TcpClient::ConnectedState && socket.state() != TcpClient::ConnectedState) {
+            socket.connectToHost("127.0.0.1", 9999);
+        }
+
+        if (!socket.waitForConnected(2000)) {
+            continue;
+        }
+
+        socket.generateKeys();
 
         const char* ownPubKey = reinterpret_cast<const char*>(socket.getPackedPublicKey());
-        qDebug() << "client PubKey:";
-        Util::printBytes(reinterpret_cast<const u_char*>(ownPubKey), 66);
         socket.write(ownPubKey, 66);
 
-        if (socket.waitForBytesWritten(5000)) {
-            qDebug() << "bytes written";
-            if (socket.waitForReadyRead(5000)) {
-                auto bytesRead = socket.read(buffer, BUFFER_FILE_SIZE);
-                qDebug() << "bytesRead:" << bytesRead;
-                qDebug() << "server PubKey:";
-                Util::printBytes(reinterpret_cast<const u_char*>(buffer), 66);
-                qDebug() << "Some sh..?:";
-                Util::printBytes(reinterpret_cast<const u_char*>(buffer), bytesRead);
-                try {
-                    socket.calculateSecretKey(reinterpret_cast<u_char*>(buffer));
-                } catch (const std::exception& ex) {
-                    qDebug() << "Secret key calculating exception:" << ex.what();
-                    return;
-                }
-
-                QByteArray secret(reinterpret_cast<const char*>(socket.getSecretKey()), 32);
-                qDebug() << "Local secret key:" << secret.toHex();
-            } else {
-                emit error(socket.errorString());
-                return;
-            }
-        } else {
-            emit error(socket.errorString());
-            return;
+        if (!socket.waitForBytesWritten(1000)) {
+            qDebug() << "Bytes not written!!!(1)";
+            continue;
         }
-    } else {
-        emit error(socket.errorString());
-        return;
+        qDebug() << "key was sent";
+        if (!socket.waitForReadyRead(5000)) {
+            continue;
+        }
+
+        auto bytesRead = socket.read(buffer, 128);
+        if (bytesRead != 66) {
+            qDebug() << "bytesRead(1) != 66";
+            continue;
+        }
+
+        qDebug() << "bytesRead:" << bytesRead;
+
+        try {
+            socket.calculateSecretKey(reinterpret_cast<const u_char*>(buffer));
+        } catch (const std::exception& ex) {
+            qDebug() << "Secret key calculating error:" << ex.what();
+            continue;
+        }
+        QByteArray secret(reinterpret_cast<const char*>(socket.getSecretKey()), 32);
+        qDebug() << "Secret key:" << secret.toHex();
+
+        if (!socket.waitForReadyRead(5000)) {
+            qDebug() << "Reading test msg timeout";
+            continue;
+        }
+
+        bytesRead = socket.read(buffer, 128);
+        if (bytesRead != TcpClient::EXPECTED_TEST_MSG_LEN) {
+            qDebug() << "Wrong test msg len:" << bytesRead << "!=" << TcpClient::EXPECTED_TEST_MSG_LEN;
+            continue;
+        }
+        qDebug() << "test msg read:" << bytesRead;
+
+        int sent;
+        try {
+            sent = socket.encryptAndSend(reinterpret_cast<const u_char*>(TcpClient::TEST_MESSAGE), 4);
+        } catch (const std::exception& ex) {
+            qDebug() << "Can't encrypt and send test message:" << ex.what();
+            continue;
+        }
+
+        if (!socket.waitForBytesWritten(1000)) {
+            qDebug() << "Bytes not written!!!(2)";
+            continue;
+        }
+        qDebug() << "test msg sent:" << sent;
+
+        QByteArray decryptedTestMsg;
+        try {
+            decryptedTestMsg = socket.decryptData(reinterpret_cast<const u_char*>(buffer), TcpClient::EXPECTED_TEST_MSG_LEN);
+        } catch (const std::exception& ex) {
+            qDebug() << "Can't decrypt test data:" << ex.what();
+            continue;
+        }
+
+        if (std::strcmp(decryptedTestMsg.data(), TcpClient::TEST_MESSAGE) != 0) {
+            qDebug() << "Error:" << decryptedTestMsg << "!=" << TcpClient::TEST_MESSAGE;
+            continue;
+        }
+        emit information("Addition connection established");
+        break;
     }
 
     QFile file(m_fileName);

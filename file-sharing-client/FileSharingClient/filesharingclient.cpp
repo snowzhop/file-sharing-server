@@ -22,22 +22,128 @@ FileSharingClient::FileSharingClient(QWidget *parent)
 
     ui->tableWidget->installEventFilter(this);
 
-    connect(ui->connectToServerButton, &QPushButton::pressed, this, &FileSharingClient::connectToServerSlot);
-    connect(ui->testButton, &QPushButton::pressed, this, &FileSharingClient::testRequestSlot);
+    connect(ui->connectToServerButton, &QPushButton::pressed, this, &FileSharingClient::establishConnectionSlot);
+//    connect(ui->testButton, &QPushButton::pressed, this, &FileSharingClient::testRequestSlot);
 
-    connect(ui->tableWidget, &QTableWidget::cellDoubleClicked, this, &FileSharingClient::doubleClickSlot);
+//    connect(ui->tableWidget, &QTableWidget::cellDoubleClicked, this, &FileSharingClient::doubleClickSlot);
 
-    connect(&tcpClient, &TcpClient::connected, this, &FileSharingClient::connectedSlot);
-    connect(&tcpClient, &TcpClient::readyRead, this, &FileSharingClient::readyReadSlot);
+//    connect(&tcpClient, &TcpClient::connected, this, &FileSharingClient::connectedSlot);
+//    connect(&tcpClient, &TcpClient::readyRead, this, &FileSharingClient::readyReadSlot);
 
-    connect(ui->tableWidget, &MainTableWidget::dropRowSignal, this, &FileSharingClient::moveFileRequestSlot);
+//    connect(ui->tableWidget, &MainTableWidget::dropRowSignal, this, &FileSharingClient::moveFileRequestSlot);
 
-    connect(ui->tableWidget, &QTableWidget::customContextMenuRequested, this, &FileSharingClient::showContextMenuSlot);
+//    connect(ui->tableWidget, &QTableWidget::customContextMenuRequested, this, &FileSharingClient::showContextMenuSlot);
 }
 
 FileSharingClient::~FileSharingClient() {
     delete[] mainBuffer;
     delete ui;
+}
+
+void FileSharingClient::establishConnectionSlot() {
+    if (tcpClient.state() != TcpClient::ConnectedState) {
+        char buffer[128];
+        tcpClient.connectToHost("127.0.0.1", 9999);
+        for (int i = 0; i < CONNECTION_ATTEMPTS; ++i) {
+//            qDebug() << "Handshake attempt:" << i+1;
+
+            if (tcpClient.state() != TcpClient::ConnectedState && tcpClient.state() != TcpClient::ConnectedState) {
+                tcpClient.connectToHost("127.0.0.1", 9999);
+            }
+
+            if (!tcpClient.waitForConnected(2000)) {
+                continue;
+            }
+
+//            qDebug() << "connected";
+            tcpClient.generateKeys();
+
+            sendMessage(tcpClient.getPackedPublicKey(), 66);
+
+            if (!tcpClient.waitForBytesWritten(1000)) {
+                qDebug() << "Bytes not written!!!(1)";
+                continue;
+            }
+//            qDebug() << "key was sent";
+            if (!tcpClient.waitForReadyRead(5000)) {
+                continue;
+            }
+
+            auto bytesRead = tcpClient.read(buffer, 128);
+            if (bytesRead != 66) {
+                qDebug() << "bytesRead(1) != 66";
+                continue;
+            }
+
+//            qDebug() << "bytesRead:" << bytesRead;
+
+            try {
+                tcpClient.calculateSecretKey(reinterpret_cast<const u_char*>(buffer));
+            } catch (const std::exception& ex) {
+                qDebug() << "Secret key calculating error:" << ex.what();
+                continue;
+            }
+            QByteArray secret(reinterpret_cast<const char*>(tcpClient.getSecretKey()), 32);
+            qDebug() << "Secret key:" << secret.toHex();
+
+            if (!tcpClient.waitForReadyRead(5000)) {
+                qDebug() << "Reading test msg timeout";
+                continue;
+            }
+
+            bytesRead = tcpClient.read(buffer, 128);
+            if (bytesRead != TcpClient::EXPECTED_TEST_MSG_LEN) {
+                qDebug() << "Wrong test msg len:" << bytesRead << "!=" << TcpClient::EXPECTED_TEST_MSG_LEN;
+                continue;
+            }
+//            qDebug() << "test msg read:" << bytesRead;
+
+            int sent;
+            try {
+                sent = tcpClient.encryptAndSend(reinterpret_cast<const u_char*>(TcpClient::TEST_MESSAGE), 4);
+            } catch (const std::exception& ex) {
+                qDebug() << "Can't encrypt and send test message:" << ex.what();
+                continue;
+            }
+
+            if (!tcpClient.waitForBytesWritten(1000)) {
+                qDebug() << "Bytes not written!!!(2)";
+                continue;
+            }
+//            qDebug() << "test msg sent:" << sent;
+
+            QByteArray decryptedTestMsg;
+            try {
+                decryptedTestMsg = tcpClient.decryptData(reinterpret_cast<const u_char*>(buffer), TcpClient::EXPECTED_TEST_MSG_LEN);
+            } catch (const std::exception& ex) {
+                qDebug() << "Can't decrypt test data:" << ex.what();
+                continue;
+            }
+
+            if (std::strcmp(decryptedTestMsg.data(), TcpClient::TEST_MESSAGE) != 0) {
+                qDebug() << "Error:" << decryptedTestMsg << "!=" << TcpClient::TEST_MESSAGE;
+                continue;
+            }
+
+            infoProcessingSlot(QString("Connected to ").append(tcpClient.peerName()));
+
+            connect(ui->testButton, &QPushButton::pressed, this, &FileSharingClient::testRequestSlot);
+
+            connect(ui->tableWidget, &QTableWidget::cellDoubleClicked, this, &FileSharingClient::doubleClickSlot);
+
+//            connect(&tcpClient, &TcpClient::connected, this, &FileSharingClient::connectedSlot);
+            connect(&tcpClient, &TcpClient::readyRead, this, &FileSharingClient::readyReadSlot);
+
+            connect(ui->tableWidget, &MainTableWidget::dropRowSignal, this, &FileSharingClient::moveFileRequestSlot);
+
+            connect(ui->tableWidget, &QTableWidget::customContextMenuRequested, this, &FileSharingClient::showContextMenuSlot);
+
+            getFileListRequestSlot();
+            return;
+        }
+    }
+    // Connection already established
+
 }
 
 void FileSharingClient::connectToServerSlot() {
@@ -61,27 +167,28 @@ void FileSharingClient::sendMessage(const u_char* data, size_t length) {
 }
 
 void FileSharingClient::readyReadSlot() {
-//    qDebug() << "Bytes available:" << tcpClient.bytesAvailable();
-    if (!gotSecretKey && (tcpClient.state() == TcpClient::ConnectedState)) {
-        char buffer[128];
-        int allBytes = 0;
+    qDebug() << "Bytes available:" << tcpClient.bytesAvailable();
+//    if (!tcpClient.isConnectionEncrypted() && (tcpClient.state() == TcpClient::ConnectedState)) {
+//        char buffer[128];
+//        int allBytes = 0;
 
-        if (tcpClient.bytesAvailable() == 66) {
-            allBytes = tcpClient.read(buffer, 128);
-            tcpClient.calculateSecretKey(reinterpret_cast<unsigned char*>(buffer));
-            qDebug() << "Secret key was calculated";
-        }
-        QByteArray secret(reinterpret_cast<const char*>(tcpClient.getSecretKey()), 32);
-        qDebug() << "Secret key:" << secret.toHex();
+//        if (tcpClient.bytesAvailable() == 66) {
+//            allBytes = tcpClient.read(buffer, 128);
+//            tcpClient.calculateSecretKey(reinterpret_cast<unsigned char*>(buffer));
+//            qDebug() << "Secret key was calculated";
+//        }
+//        QByteArray secret(reinterpret_cast<const char*>(tcpClient.getSecretKey()), 32);
+//        qDebug() << "Secret key:" << secret.toHex();
 
-        getFileListRequestSlot();
-        gotSecretKey = true;
-        return;
-    }
+//        getFileListRequestSlot();
+////        gotSecretKey = true;
+//        tcpClient.switchConnectionToEncryptedMode();
+//        return;
+//    }
 
     int readBytes = 0;
 
-    if (gotSecretKey && (tcpClient.state() == TcpClient::ConnectedState)) {
+    if (tcpClient.state() == TcpClient::ConnectedState) {
         size_t total = 0;
 
 

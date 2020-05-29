@@ -39,6 +39,7 @@ private:
     char* mainBuffer = nullptr;
     UI::Ui_Main* ui = nullptr;
 
+    const int CONNECTION_ATTEMPTS = 5;
     const int MAIN_BUFFER_SIZE = 1024*1024+16;
     const int SERVICE_INFO_SIZE = 5;
     const int STATUS_MESSAGE_TIMEOUT = 10000; // milliseconds
@@ -50,9 +51,11 @@ private:
     void showFileList(const u_char* rawFileList, size_t length);
     void downloadFile(const u_char* rawFileInfo, size_t length);
 
+
     const char* getAuthToken();
 
 private slots:
+    void establishConnectionSlot();
     void connectToServerSlot();
     void connectedSlot();
     void readyReadSlot();
