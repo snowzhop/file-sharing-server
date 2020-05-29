@@ -16,7 +16,11 @@ const (
 	responseHeaderLength  = 2           /*          */
 	requestHeaderLength   = 5           /* command + auth-token = 1 + 4 = 5 */
 
-	swapFileSuffix = ".swp"
+	swapFileSuffix     = ".swp"
+	connectionAttempts = 5
+	testMessage        = "Test"
+	testMsgBufLen      = 30
+	expectedMsgBufLen  = len(testMessage) + 16
 )
 
 /* Server's responses */

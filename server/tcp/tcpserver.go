@@ -158,42 +158,82 @@ func handleConn(conn *net.TCPConn) {
 func serverHandshake(conn *net.TCPConn, ec *eccrypto.ECcrypto) error {
 	clientPubKey := make([]byte, handshakeBufferSize)
 
-	conn.SetReadDeadline(time.Now().Add(time.Second * 5))
-	n, err := conn.Read(clientPubKey)
-	if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
-		return fmt.Errorf("connection timeout")
-	}
-	if n != handshakeBufferSize {
-		return fmt.Errorf("wrong data (n(%d) != handshakeBufferSize(%d))", n, handshakeBufferSize)
-	}
-	conn.SetReadDeadline(time.Unix(0, 0))
+	testBuf := make([]byte, testMsgBufLen)
+	var err error
 
-	pubKey, err := ec.GenerateKeyPair()
-	if err != nil {
-		return err
+	for i := 0; i < connectionAttempts; i++ {
+		log.Printf("Handshake attempt #%d", i+1)
+
+		conn.SetReadDeadline(time.Now().Add(time.Second * 5))
+		n, err := conn.Read(clientPubKey)
+		if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
+			return fmt.Errorf("connection timeout")
+		}
+		if n != handshakeBufferSize {
+			return fmt.Errorf("wrong data (n(%d) != handshakeBufferSize(%d))", n, handshakeBufferSize)
+		}
+		conn.SetReadDeadline(time.Unix(0, 0))
+
+		pubKey, err := ec.GenerateKeyPair()
+		if err != nil {
+			return err
+		}
+
+		packedPubKey := eccrypto.PackKey(pubKey.X, pubKey.Y)
+
+		n, err = conn.Write(packedPubKey)
+		if err != nil {
+			return err
+		}
+		if n != len(packedPubKey) {
+			return fmt.Errorf("data not sent completely")
+		}
+
+		x, y, err := eccrypto.UnpackKey(clientPubKey)
+		if err != nil {
+			return err
+		}
+
+		err = ec.CalculateSharedKey(x, y)
+		if err != nil {
+			return err
+		}
+
+		/* Test message */
+		encryptedTestMsg, err := ec.Encrypt([]byte(testMessage))
+		if err != nil {
+			return fmt.Errorf("Can't encrypt test msg: %v", err)
+		}
+
+		_, err = conn.Write(encryptedTestMsg)
+		if err != nil {
+			return fmt.Errorf("Can't send test msg: %v", err)
+		}
+
+		conn.SetReadDeadline(time.Now().Add(time.Second * 5))
+		n, err = conn.Read(testBuf)
+		if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
+			return fmt.Errorf("Test msg reading timeout")
+		}
+		if n != expectedMsgBufLen {
+			log.Printf("Wrong testMsg(encrypted) length: n(%d) != expectedMsgBufLen(%d)", n, expectedMsgBufLen)
+			continue
+		}
+
+		decryptedTestMsg, err := ec.Decrypt(testBuf[:n])
+		if err != nil {
+			log.Printf("Test msg decrypting error: %v", err)
+			continue
+		}
+
+		if bytes.Compare(decryptedTestMsg, []byte(testMessage)) == 0 {
+			break
+		}
+		conn.SetReadDeadline(time.Unix(0, 0))
+
 	}
 
-	packedPubKey := eccrypto.PackKey(pubKey.X, pubKey.Y)
-
-	n, err = conn.Write(packedPubKey)
-	if err != nil {
-		return err
-	}
-	if n != len(packedPubKey) {
-		return fmt.Errorf("data not sent completely")
-	}
-
-	x, y, err := eccrypto.UnpackKey(clientPubKey)
-	if err != nil {
-		return err
-	}
-
-	err = ec.CalculateSharedKey(x, y)
-	if err != nil {
-		return err
-	}
-
-	return nil
+	return err
 }
 
 func requestProcessing(request []byte, info *clientInfo) []byte {
