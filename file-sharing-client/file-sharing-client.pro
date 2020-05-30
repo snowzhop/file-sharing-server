@@ -19,6 +19,7 @@ DEFINES += QT_DEPRECATED_WARNINGS
 SOURCES += \
     FileSharingClient/filesharingclient.cpp \
     MainTable/maintable.cpp \
+    MinorDialogs/ServerInfoDialog/serverinfodialog.cpp \
     TcpClient/downloadfiletask.cpp \
     TcpClient/tcpclient.cpp \
     eccryptopp/eccryptopp.cpp \
@@ -28,6 +29,7 @@ SOURCES += \
 HEADERS += \
     FileSharingClient/filesharingclient.h \
     MainTable/maintable.h \
+    MinorDialogs/ServerInfoDialog/serverinfodialog.h \
     TcpClient/downloadfiletask.h \
     TcpClient/tcpclient.h \
     eccryptopp/eccryptopp.h \

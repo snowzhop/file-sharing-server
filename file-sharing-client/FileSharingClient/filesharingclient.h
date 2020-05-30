@@ -55,7 +55,7 @@ private:
     const char* getAuthToken();
 
 private slots:
-    void establishConnectionSlot();
+    void establishConnectionSlot(const QString& addr, u_short port);
     void connectToServerSlot();
     void connectedSlot();
     void readyReadSlot();
@@ -70,7 +70,7 @@ private slots:
     void infoProcessingSlot(const QString& info);
     void errorProcessingSlot(const QString& err);
 
-    void testRequestSlot();
+    void testRequestSlot(const QString& addr, u_short port);
 
 public:
     FileSharingClient(QWidget *parent = nullptr);

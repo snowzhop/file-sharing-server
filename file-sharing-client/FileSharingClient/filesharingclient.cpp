@@ -1,6 +1,7 @@
 #include "filesharingclient.h"
 #include "util/util.h"
 #include "TcpClient/downloadfiletask.h"
+#include "MinorDialogs/ServerInfoDialog/serverinfodialog.h"
 
 #include <QDebug>
 #include <QThreadPool>
@@ -8,6 +9,7 @@
 #include <QCommonStyle>
 #include <QMenu>
 #include <QMessageBox>
+#include <QFileDialog>
 
 #include <iostream>
 
@@ -22,7 +24,14 @@ FileSharingClient::FileSharingClient(QWidget *parent)
 
     ui->tableWidget->installEventFilter(this);
 
-    connect(ui->connectToServerButton, &QPushButton::pressed, this, &FileSharingClient::establishConnectionSlot);
+//    connect(ui->connectToServerButton, &QPushButton::pressed, this, &FileSharingClient::establishConnectionSlot);
+    connect(ui->connectToServerButton, &QPushButton::clicked, this, [this] {
+        ServerInfoDialog servInfo;
+
+        connect(&servInfo, &ServerInfoDialog::connectSignal, this, &FileSharingClient::establishConnectionSlot);
+
+        servInfo.exec();
+    });
 }
 
 FileSharingClient::~FileSharingClient() {
@@ -30,15 +39,15 @@ FileSharingClient::~FileSharingClient() {
     delete ui;
 }
 
-void FileSharingClient::establishConnectionSlot() {
+void FileSharingClient::establishConnectionSlot(const QString& serverAddr, u_short serverPort) {
     if (tcpClient.state() != TcpClient::ConnectedState) {
         char buffer[128];
-        tcpClient.connectToHost("127.0.0.1", 9999);
+        tcpClient.connectToHost(serverAddr, serverPort);
         for (int i = 0; i < CONNECTION_ATTEMPTS; ++i) {
 //            qDebug() << "Handshake attempt:" << i+1;
 
             if (tcpClient.state() != TcpClient::ConnectedState && tcpClient.state() != TcpClient::ConnectedState) {
-                tcpClient.connectToHost("127.0.0.1", 9999);
+                tcpClient.connectToHost(serverAddr, serverPort);
             }
 
             if (!tcpClient.waitForConnected(2000)) {
@@ -117,7 +126,7 @@ void FileSharingClient::establishConnectionSlot() {
 
             infoProcessingSlot(QString("Connected to ").append(tcpClient.peerName()));
 
-            connect(ui->testButton, &QPushButton::pressed, this, &FileSharingClient::testRequestSlot);
+//            connect(ui->testButton, &QPushButton::pressed, this, &FileSharingClient::testRequestSlot);
             connect(ui->tableWidget, &QTableWidget::cellDoubleClicked, this, &FileSharingClient::doubleClickSlot);
             connect(ui->tableWidget, &MainTableWidget::dropRowSignal, this, &FileSharingClient::moveFileRequestSlot);
             connect(ui->tableWidget, &QTableWidget::customContextMenuRequested, this, &FileSharingClient::showContextMenuSlot);
@@ -172,8 +181,8 @@ void FileSharingClient::readyReadSlot() {
 
 }
 
-void FileSharingClient::testRequestSlot() {
-    qDebug() << "Empty test request";
+void FileSharingClient::testRequestSlot(const QString& addr, u_short port) {
+    qDebug() << "addr:" << addr << "\tport:" << port;
 }
 
 /* ---- REQUEST CREATING FUNCTIONS ---- */
@@ -394,8 +403,12 @@ void FileSharingClient::downloadFile(const u_char *rawFileInfo, size_t length) {
     QString fileName(fileInfoList[0]);
     u_short port = fileInfoList[1].toUShort(nullptr, 10);
 
-    QString tmpDir = "/home/polycarp/Test_dir/";
+    QString tmpDir = QFileDialog::getExistingDirectory(this,
+                     "Choose directory : " + fileName,
+                     "/home/polycarp/Test_dir",
+                     QFileDialog::ShowDirsOnly | QFileDialog::DontResolveSymlinks);
 
+    tmpDir.append("/");
 
     DownloadFileTask* downloadTask = new DownloadFileTask(tmpDir.append(fileName), tcpClient.peerName(), port, nullptr);
     connect(downloadTask, &DownloadFileTask::information, this, &FileSharingClient::infoProcessingSlot);
