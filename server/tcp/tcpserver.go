@@ -501,6 +501,12 @@ func moveFile(info *clientInfo, data []byte) []byte {
 				return response
 			}
 
+			if bytes.Compare(newPath, []byte("..")) == 0 {
+				newPath = []byte("")
+			} else {
+				newPath = append(newPath, '/')
+			}
+
 			oldPathStr := info.workingFolder + "/" + string(oldName)
 			newPathStr := serverConfig.WorkingDirectory() + "/" + string(newPath) + string(oldName)
 
