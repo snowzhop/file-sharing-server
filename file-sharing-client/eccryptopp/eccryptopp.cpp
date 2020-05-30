@@ -26,7 +26,7 @@ CryptoPP::byte* EcCrypto::packKey(const CryptoPP::ECPPoint& elem) {
 
 CryptoPP::byte* EcCrypto::packKey(const CryptoPP::Integer &x, const CryptoPP::Integer &y) {
     if (x.ByteCount() != 32 || y.ByteCount() != 32) {
-        throw std::runtime_error("Wrong arguments");
+        throw std::runtime_error("Pack key: Wrong arguments");
     }
     byte* packedKey = new byte[66]; /* X-coord(32) + Y-coord(32) + 2 bytes(for type of key) */
     byte* buffer = new byte[32];

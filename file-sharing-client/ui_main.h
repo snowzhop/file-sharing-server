@@ -11,7 +11,7 @@
 #include <QHeaderView>
 #include <QStatusBar>
 
-#include "MainTable/maintable.h"
+#include "Widgets/MainTable/maintable.h"
 
 namespace UI {
 
