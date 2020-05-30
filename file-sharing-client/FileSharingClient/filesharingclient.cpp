@@ -2,6 +2,7 @@
 #include "util/util.h"
 #include "TcpClient/downloadfiletask.h"
 #include "MinorDialogs/ServerInfoDialog/serverinfodialog.h"
+#include "Widgets/RenamingLine/renamingline.h"
 
 #include <QDebug>
 #include <QThreadPool>
@@ -57,7 +58,12 @@ void FileSharingClient::establishConnectionSlot(const QString& serverAddr, u_sho
 //            qDebug() << "connected";
             tcpClient.generateKeys();
 
-            sendMessage(tcpClient.getPackedPublicKey(), 66);
+            try {
+                sendMessage(tcpClient.getPackedPublicKey(), 66);
+            } catch (const std::exception& ex) {
+                qDebug() << "Sending pub key exceprion:" << ex.what();
+                continue;
+            }
 
             if (!tcpClient.waitForBytesWritten(1000)) {
                 qDebug() << "Bytes not written!!!(1)";
@@ -126,8 +132,7 @@ void FileSharingClient::establishConnectionSlot(const QString& serverAddr, u_sho
 
             infoProcessingSlot(QString("Connected to ").append(tcpClient.peerName()));
 
-//            connect(ui->testButton, &QPushButton::pressed, this, &FileSharingClient::testRequestSlot);
-            connect(ui->tableWidget, &QTableWidget::cellDoubleClicked, this, &FileSharingClient::doubleClickSlot);
+            connect(ui->tableWidget, &QTableWidget::cellDoubleClicked, this, &FileSharingClient::changeDirOrDownloadSlot);
             connect(ui->tableWidget, &MainTableWidget::dropRowSignal, this, &FileSharingClient::moveFileRequestSlot);
             connect(ui->tableWidget, &QTableWidget::customContextMenuRequested, this, &FileSharingClient::showContextMenuSlot);
 
@@ -181,8 +186,10 @@ void FileSharingClient::readyReadSlot() {
 
 }
 
-void FileSharingClient::testRequestSlot(const QString& addr, u_short port) {
-    qDebug() << "addr:" << addr << "\tport:" << port;
+void FileSharingClient::testRequestSlot() {
+    qDebug() << "test request slot";
+    RenamingLine* renamingLine = reinterpret_cast<RenamingLine*>(sender());
+    renamingLine->deleteLater();
 }
 
 /* ---- REQUEST CREATING FUNCTIONS ---- */
@@ -209,7 +216,10 @@ void FileSharingClient::showContextMenuSlot(const QPoint& point) {
     /*
      * Here must be connections
      * */
-    connect(renameFile, &QAction::triggered, this, &FileSharingClient::renameFileRequestSlot);
+    connect(downloadFile, &QAction::triggered, this, [this, point] {
+        changeDirOrDownloadSlot(ui->tableWidget->itemAt(point)->row(), true);
+    });
+    connect(renameFile, &QAction::triggered, this, &FileSharingClient::showRenamingLineSlot);
     connect(deleteFile, &QAction::triggered, this, &FileSharingClient::deleteFileRequestSlot);
 
 
@@ -221,25 +231,56 @@ void FileSharingClient::showContextMenuSlot(const QPoint& point) {
     contextMenu->popup(ui->tableWidget->viewport()->mapToGlobal(point));
 }
 
+void FileSharingClient::showRenamingLineSlot() {
+    qDebug() << "showRenamingLineSlot";
+    auto items = ui->tableWidget->selectedItems();
+    auto fileName = items[0]->data(Qt::DisplayRole).toString();
+
+    RenamingLine* renamingLine = new RenamingLine(fileName, this);
+
+    int row = ui->tableWidget->rowViewportPosition(items[0]->row())
+              + renamingLine->height()
+              + ui->tableWidget->rowHeight(items[0]->row()) * 2;
+    int col = ui->tableWidget->columnViewportPosition(items[0]->column());
+
+    renamingLine->resize(ui->tableWidget->columnWidth(0), renamingLine->height());
+    renamingLine->move(ui->tableWidget->mapToParent(QPoint(col, row)));
+
+    connect(renamingLine, &QLineEdit::returnPressed, this, &FileSharingClient::renameFileRequestSlot);
+
+    renamingLine->show();
+    renamingLine->setFocus();
+
+
+}
+
 void FileSharingClient::renameFileRequestSlot() {
-    auto item = ui->tableWidget->selectedItems();
-    auto fileName = item[0]->data(Qt::DisplayRole).toString();
+    qDebug() << "renameFileRequestSlot";
 
-//    qDebug() << "fileName:" << fileName << "\tlen:" << fileName.length();
+    RenamingLine* renamingLine = reinterpret_cast<RenamingLine*>(sender());
 
-    QByteArray request;
-    QDataStream stream(&request, QIODevice::WriteOnly);
-    stream << static_cast<u_char>(Command::renameFileCommand);
-    stream.writeRawData(getAuthToken(), 4);
-    stream.writeRawData(fileName.toStdString().c_str(), fileName.length());
-    stream.writeRawData("#", 1);
-    fileName.append("_renamed");
-    stream.writeRawData(fileName.toStdString().c_str(), fileName.length());
+    QString oldName = renamingLine->getOldName();
+    QString newName = renamingLine->text();
+    renamingLine->deleteLater();
 
-    try {
-        tcpClient.encryptAndSend(reinterpret_cast<const u_char*>(request.data()), request.length());
-    } catch (const std::exception& ex) {
-        qDebug() << "renameFile exception:" << ex.what();
+    if (newName.length() != 0) {
+        qDebug() << "oldName:" << oldName << "\tnewName:" << newName;
+
+        QByteArray request;
+        QDataStream stream(&request, QIODevice::WriteOnly);
+        stream << static_cast<u_char>(Command::renameFileCommand);
+        stream.writeRawData(getAuthToken(), 4);
+        stream.writeRawData(oldName.toStdString().c_str(), oldName.length());
+        stream.writeRawData("#", 1);
+        stream.writeRawData(newName.toStdString().c_str(), newName.length());
+
+        try {
+            tcpClient.encryptAndSend(reinterpret_cast<const u_char*>(request.data()), request.length());
+        } catch (const std::exception& ex) {
+            qDebug() << "renameFile exception:" << ex.what();
+        }
+    } else {
+        warningProcessingSlot("Empty name");
     }
 }
 
@@ -260,14 +301,14 @@ void FileSharingClient::deleteFileRequestSlot() {
     }
 }
 
-void FileSharingClient::doubleClickSlot(int row) {
+void FileSharingClient::changeDirOrDownloadSlot(int row, bool fromContextMenu) {
 
     auto data = ui->tableWidget->item(row, 0)->data(Qt::DisplayRole);
     QString fileName;
     if (data.isValid() && data.toString().length() > 0) {
         fileName = data.toString();
     } else {
-        qDebug() << "doubleClickSlot: Error data.toString()";
+        qDebug() << "changeDirOrDownloadSlot: Error data.toString()";
         return;
     }
 
@@ -278,9 +319,14 @@ void FileSharingClient::doubleClickSlot(int row) {
 
     if (data.isValid() && data.toString().length() > 0) {
         if (data.toString()[0] == 'D') {
-            stream << static_cast<u_char>(Command::changeDirCommand);
-            stream.writeRawData(getAuthToken(), 4);  // TODO Temporary Solution
-            stream.writeRawData(fileName.toStdString().c_str(), fileName.length());
+            if (!fromContextMenu) {
+                stream << static_cast<u_char>(Command::changeDirCommand);
+                stream.writeRawData(getAuthToken(), 4);  // TODO Temporary Solution
+                stream.writeRawData(fileName.toStdString().c_str(), fileName.length());
+            } else {
+                warningProcessingSlot("Can't download directory");
+                return;
+            }
 
         } else if (data.toString()[0] == 'F') {
             stream << static_cast<u_char>(Command::downloadFileCommand);
@@ -297,7 +343,33 @@ void FileSharingClient::doubleClickSlot(int row) {
 }
 
 void FileSharingClient::moveFileRequestSlot(int rowNumber) {
-    qDebug() << "target row:" << rowNumber;
+    auto selectedFile = ui->tableWidget->selectedItems()[0]->data(Qt::DisplayRole).toString();
+    auto targetFile = ui->tableWidget->item(rowNumber, 0)->data(Qt::DisplayRole).toString();
+
+    qDebug() << "target file:" << targetFile;
+    qDebug() << "selected file:" << selectedFile;
+
+    auto targetFileInfo = ui->tableWidget->item(rowNumber, 2)->data(Qt::DisplayRole).toString();
+
+    if (targetFileInfo[0] != 'D') {
+        warningProcessingSlot("Target isn't directory!");
+        return;
+    }
+
+    QByteArray request;
+    QDataStream stream(&request, QIODevice::WriteOnly);
+    stream << static_cast<u_char>(Command::moveFileCommand);
+    stream.writeRawData(getAuthToken(), 4);
+    stream.writeRawData(selectedFile.toStdString().c_str(), selectedFile.length());
+    stream.writeRawData("#", 1);
+    stream.writeRawData(targetFile.toStdString().c_str(), targetFile.length());
+
+    try {
+        tcpClient.encryptAndSend(reinterpret_cast<const u_char*>(request.data()), request.length());
+    } catch (const std::exception& ex) {
+        qDebug() << "move file exception:" << ex.what();
+    }
+
 }
 
 void FileSharingClient::infoProcessingSlot(const QString& info) {
@@ -307,7 +379,11 @@ void FileSharingClient::infoProcessingSlot(const QString& info) {
 
 void FileSharingClient::errorProcessingSlot(const QString& err) {
     QMessageBox::critical(this, "Error", err);
-    qDebug() << "Error from other thread:" << err;
+    qDebug() << "Error:" << err;
+}
+
+void FileSharingClient::warningProcessingSlot(const QString& warn, const QString& title) {
+    QMessageBox::warning(this, title, warn);
 }
 
 /* ---- MAIN PROCESS FUNCTION ---- */
@@ -331,6 +407,11 @@ void FileSharingClient::responseProcessing(const u_char *data, size_t length) {
                     break;
                 }
                 case Command::deleteFileCommand: {
+                    ui->tableWidget->setRowCount(0);
+                    showFileList(data+2, length-2);
+                    break;
+                }
+                case Command::moveFileCommand: {
                     ui->tableWidget->setRowCount(0);
                     showFileList(data+2, length-2);
                     break;

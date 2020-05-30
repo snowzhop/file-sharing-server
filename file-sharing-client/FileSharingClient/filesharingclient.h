@@ -51,6 +51,8 @@ private:
     void showFileList(const u_char* rawFileList, size_t length);
     void downloadFile(const u_char* rawFileInfo, size_t length);
 
+    void renameFile(const QString& oldName, const QString& newName);
+
 
     const char* getAuthToken();
 
@@ -61,16 +63,18 @@ private slots:
     void readyReadSlot();
 
     void showContextMenuSlot(const QPoint& p);
-    void doubleClickSlot(int row);
+    void changeDirOrDownloadSlot(int row, bool fromContextMenu = false);
     void getFileListRequestSlot();
+    void showRenamingLineSlot();
     void renameFileRequestSlot();
     void deleteFileRequestSlot();
     void moveFileRequestSlot(int rowNumber);
 
     void infoProcessingSlot(const QString& info);
     void errorProcessingSlot(const QString& err);
+    void warningProcessingSlot(const QString& warn, const QString& title = "Warning");
 
-    void testRequestSlot(const QString& addr, u_short port);
+    void testRequestSlot();
 
 public:
     FileSharingClient(QWidget *parent = nullptr);
