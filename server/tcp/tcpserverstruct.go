@@ -21,6 +21,8 @@ const (
 	testMessage        = "Test"
 	testMsgBufLen      = 128
 	expectedMsgBufLen  = len(testMessage) + 16
+
+	additionalConnTimeout = 40 /* seconds */
 )
 
 /* Server's responses */

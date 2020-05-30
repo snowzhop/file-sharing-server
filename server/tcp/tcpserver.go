@@ -605,7 +605,7 @@ func downloadFile(info *clientInfo, data []byte) []byte {
 func sendFile(listener *net.TCPListener, fileToSend string) {
 	defer deleteSwapFile(fileToSend)
 
-	listener.SetDeadline(time.Now().Add(time.Second * 8)) // 8 seconds deadline
+	listener.SetDeadline(time.Now().Add(time.Second * additionalConnTimeout)) // 40 seconds deadline
 	listenerAddr := listener.Addr().String()
 
 	conn, err := listener.AcceptTCP()
