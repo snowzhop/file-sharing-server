@@ -66,8 +66,3 @@ ServerInfoDialog::ServerInfoDialog(QWidget* parent)
 
 ServerInfoDialog::~ServerInfoDialog() {
 }
-
-//void ServerInfoDialog::connectionSlot() {
-//    u_short port = portLine->text().toUShort(nullptr, 10);
-
-//}
