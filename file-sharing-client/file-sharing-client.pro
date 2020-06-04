@@ -20,6 +20,7 @@ SOURCES += \
     FileSharingClient/filesharingclient.cpp \
     MinorDialogs/ServerInfoDialog/serverinfodialog.cpp \
     TcpClient/downloadfiletask.cpp \
+    TcpClient/sendfiletask.cpp \
     TcpClient/tcpclient.cpp \
     Widgets/MainTable/maintable.cpp \
     Widgets/RenamingLine/renamingline.cpp \
@@ -31,6 +32,7 @@ HEADERS += \
     FileSharingClient/filesharingclient.h \
     MinorDialogs/ServerInfoDialog/serverinfodialog.h \
     TcpClient/downloadfiletask.h \
+    TcpClient/sendfiletask.h \
     TcpClient/tcpclient.h \
     Widgets/MainTable/maintable.h \
     Widgets/RenamingLine/renamingline.h \
