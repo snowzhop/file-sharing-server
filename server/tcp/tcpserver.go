@@ -167,7 +167,9 @@ func serverHandshake(conn *net.TCPConn, ec *eccrypto.ECcrypto) error {
 		conn.SetReadDeadline(time.Now().Add(time.Second * 5))
 		n, err := conn.Read(clientPubKey)
 		if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
-			return fmt.Errorf("connection timeout")
+			log.Printf("Connection (%s) timeout.", conn.RemoteAddr().String())
+			continue
+			// return fmt.Errorf("connection timeout")
 		}
 		if n != handshakeBufferSize {
 			return fmt.Errorf("wrong data (n(%d) != handshakeBufferSize(%d))", n, handshakeBufferSize)
@@ -249,7 +251,7 @@ func requestProcessing(request []byte, info *clientInfo) []byte {
 		response = changeDir(info, request[requestHeaderLength:])
 	case downloadFileCommand:
 		/* Add permission checking */
-		response = downloadFile(info, request[requestHeaderLength:])
+		response = sendFile(info, request[requestHeaderLength:])
 
 	case renameFileCommand:
 		/* Add permission checking */
@@ -262,6 +264,9 @@ func requestProcessing(request []byte, info *clientInfo) []byte {
 	case moveFileCommand:
 		/* Add permission checking */
 		response = moveFile(info, request[requestHeaderLength:])
+
+	case sendFileCommand:
+		response = getFile(info, request[requestHeaderLength:])
 
 	case adminAuthCommand:
 
@@ -536,7 +541,184 @@ func moveFile(info *clientInfo, data []byte) []byte {
 	return response
 }
 
-func downloadFile(info *clientInfo, data []byte) []byte {
+func getFile(info *clientInfo, data []byte) []byte {
+	var response []byte
+
+	if len(data) > 0 && !isSwapFileExists([]byte(info.workingFolder), data) {
+		swapFile, err := createSwapFile([]byte(info.workingFolder), data)
+		if err != nil {
+			log.Printf("Error: can't create swap file %s: %v", swapFile.Name(), err)
+			response = createErrorResponse(sendFileCommand, RespServerError)
+			return response
+		}
+		/* Swap file will be deleted in sendFileToClient() goroutine */
+
+		fileToReceive := info.workingFolder + "/" + string(data)
+
+		_, err = os.Stat(fileToReceive)
+		if err == nil {
+			log.Printf("Error: file %s already exists.", fileToReceive)
+
+			response = createErrorResponse(sendFileCommand, RespClientError)
+			response = append(response, []byte("File already exists")...)
+			deleteSwapFile(swapFile.Name())
+			return response
+		}
+
+		addr, err := net.ResolveTCPAddr("tcp", serverConfig.Address()+":0")
+		if err != nil {
+			log.Printf("Error: can't resolve address for sending listener.\nDetails: %v", err)
+			response = createErrorResponse(sendFileCommand, RespServerError)
+			deleteSwapFile(swapFile.Name())
+			return response
+		}
+
+		listener, err := net.ListenTCP("tcp", addr)
+		if err != nil {
+			log.Printf("Error: can't create new listener for file sending.\nDetails: %v", err)
+			response = createErrorResponse(sendFileCommand, RespServerError)
+			deleteSwapFile(swapFile.Name())
+			return response
+		}
+
+		if tcpAddr, ok := listener.Addr().(*net.TCPAddr); ok {
+			response = make([]byte, 2)
+			response[0] = sendFileCommand
+			response[1] = RespOK
+			response = append(response, data...)
+			response = append(response, '#')
+			response = append(response, intToByteSlice(tcpAddr.Port)...)
+		} else {
+			log.Printf("Error: can't get new listener's port")
+			response = createErrorResponse(sendFileCommand, RespServerError)
+			deleteSwapFile(swapFile.Name())
+			return response
+		}
+
+		log.Printf("New listener (%s) was created for file receiving.", listener.Addr().String())
+
+		go getFileFromClient(listener, fileToReceive)
+
+	} else {
+		response = createErrorResponse(sendFileCommand, RespClientError)
+		response = append(response, []byte("Such file already exists or empty request")...)
+	}
+	return response
+}
+
+func getFileFromClient(listener *net.TCPListener, fileToGet string) {
+	defer deleteSwapFile(fileToGet)
+
+	log.Printf("\tFILE: %s", fileToGet)
+	listener.SetDeadline(time.Now().Add(time.Second * additionalConnTimeout)) // 40 seconds deadline
+	listenerAddr := listener.Addr().String()
+
+	conn, err := listener.AcceptTCP()
+	if err != nil {
+		if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
+			log.Printf("Error(%s): timeout accepting error.", listenerAddr)
+			return
+		}
+		log.Printf("Error(%s): accepting error.\nDetails: %v", listenerAddr, err)
+		return
+	}
+	defer conn.Close()
+
+	var localEc eccrypto.ECcrypto
+	err = serverHandshake(conn, &localEc)
+	if err != nil {
+		log.Printf("Failed handshake with %s.\nDetails: %v", conn.RemoteAddr().String(), err)
+		return
+	}
+
+	log.Printf("Local (GET) shared: %x", localEc.Shared())
+
+	file, err := os.Create(fileToGet)
+	if err != nil {
+		log.Printf("Error (%s): can't save file %s", listenerAddr, fileToGet)
+		return
+	}
+	defer file.Close()
+
+	tmpBuf := make([]byte, receivingBufferSize)
+	var cache []byte
+
+	conn.SetReadDeadline(time.Now().Add(time.Second * 5))
+	for {
+		n, err := conn.Read(tmpBuf)
+		if err == io.EOF {
+			parts := len(cache) / receivingBufferSize
+
+			log.Printf("Last: len(cache): %d\tparts(end): %d", len(cache), parts)
+
+			for i := 0; i < parts; i++ {
+				err := decryptAndSave(file, &localEc, cache[receivingBufferSize*i:receivingBufferSize*(i+1)])
+				if err != nil {
+					log.Printf("Error (%s):Can't save decrypt/write last part of information to file: %v", listenerAddr, err)
+					return
+				}
+			}
+
+			err := decryptAndSave(file, &localEc, cache[receivingBufferSize*parts:])
+			if err != nil {
+				log.Printf("Error (%s): can't decrypt/write last part of data: %v", listenerAddr, err)
+				return
+			}
+
+			break
+
+		} else if err != nil {
+			if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
+				log.Printf("Error (%s): connection timeout.", listenerAddr)
+				return
+			}
+			log.Printf("Error: %v", err)
+			return
+		}
+
+		buffer := append(cache, tmpBuf[:n]...)
+		parts := len(buffer) / receivingBufferSize
+
+		log.Printf("Parts: %d\tn: %d\tlen(buffer): %d", parts, n, len(buffer))
+
+		var i int
+		for i = 0; i < parts; i++ {
+			log.Printf("RBS*i: %d\tRBS*(i+1): %d", receivingBufferSize*i, receivingBufferSize*(i+1))
+			err := decryptAndSave(file, &localEc, buffer[receivingBufferSize*i:receivingBufferSize*(i+1)])
+			if err != nil {
+				log.Printf("Error: can't decrypt/write data: %v", err)
+				return
+			}
+		}
+
+		log.Printf("len(cache): %d\tlen(buffer): %d", len(cache), len(buffer))
+		cache = make([]byte, len(buffer)-parts*receivingBufferSize)
+		copy(cache, buffer[parts*receivingBufferSize:])
+		log.Printf("len(cache): %d\tlen(buffer): %d", len(cache), len(buffer))
+
+		conn.SetReadDeadline(time.Now().Add(time.Millisecond * 1500))
+
+	}
+
+	log.Printf("(%s) File %s received", listenerAddr, fileToGet)
+
+}
+
+func decryptAndSave(file *os.File, cryptograph *eccrypto.ECcrypto, data []byte) error {
+	decrypted, err := cryptograph.Decrypt(data)
+	if err != nil {
+		return err
+	}
+
+	_, err = file.Write(decrypted)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func sendFile(info *clientInfo, data []byte) []byte {
 	var response []byte
 
 	if len(data) > 0 && !isSwapFileExists([]byte(info.workingFolder), data) {
@@ -546,7 +728,7 @@ func downloadFile(info *clientInfo, data []byte) []byte {
 			response = createErrorResponse(downloadFileCommand, RespError)
 			return response
 		}
-		/* Swap file will be deleted in sendFile() goroutine */
+		/* Swap file will be deleted in sendFileToClient() goroutine */
 
 		fileToSend := info.workingFolder + "/" + string(data)
 
@@ -571,7 +753,7 @@ func downloadFile(info *clientInfo, data []byte) []byte {
 			pathError := err.(*os.PathError)
 			response = createErrorResponse(downloadFileCommand, RespError)
 			response = append(response, []byte(pathError.Err.Error())...)
-			log.Printf("Error file (%s) checking: %s", pathError.Path, pathError.Err.Error())
+			log.Printf("Error: file (%s) checking: %s", pathError.Path, pathError.Err.Error())
 			deleteSwapFile(swapFile.Name())
 			return response
 		}
@@ -598,7 +780,7 @@ func downloadFile(info *clientInfo, data []byte) []byte {
 
 		log.Printf("New listener (%s) was created", listener.Addr().String())
 
-		go sendFile(listener, fileToSend)
+		go sendFileToClient(listener, fileToSend)
 
 	} else {
 		log.Printf("Error: empty file name or file is using now (%s).", string(data))
@@ -608,7 +790,7 @@ func downloadFile(info *clientInfo, data []byte) []byte {
 	return response
 }
 
-func sendFile(listener *net.TCPListener, fileToSend string) {
+func sendFileToClient(listener *net.TCPListener, fileToSend string) {
 	defer deleteSwapFile(fileToSend)
 
 	listener.SetDeadline(time.Now().Add(time.Second * additionalConnTimeout)) // 40 seconds deadline
@@ -643,7 +825,7 @@ func sendFile(listener *net.TCPListener, fileToSend string) {
 		return
 	}
 
-	log.Printf("Local shared: %x", localEc.Shared())
+	log.Printf("Local (SEND) shared: %x", localEc.Shared())
 
 	sendingBuffer := make([]byte, sendingBufferSize)
 	total := int64(0)

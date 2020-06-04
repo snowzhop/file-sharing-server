@@ -6,15 +6,16 @@ import (
 )
 
 const (
-	additionalCipherBytes = 16          /*          */
-	handshakeBufferSize   = 66          /*          */
-	networkBufferSize     = 1024        /*          */
-	sendingBufferSize     = 1024 * 1024 /*   1 MB   */
-	lengthField           = 4           /* In bytes */
-	commandField          = 1           /*          */
-	authTokenField        = 4           /*          */
-	responseHeaderLength  = 2           /*          */
-	requestHeaderLength   = 5           /* command + auth-token = 1 + 4 = 5 */
+	additionalCipherBytes = 16             /*          */
+	handshakeBufferSize   = 66             /*          */
+	networkBufferSize     = 1024           /*          */
+	sendingBufferSize     = 1024 * 1024    /*   1 MB   */
+	receivingBufferSize   = 1024*1024 + 16 /* 1MB + 16B*/
+	lengthField           = 4              /* In bytes */
+	commandField          = 1              /*          */
+	authTokenField        = 4              /*          */
+	responseHeaderLength  = 2              /*          */
+	requestHeaderLength   = 5              /* command + auth-token = 1 + 4 = 5 */
 
 	swapFileSuffix     = ".swp"
 	connectionAttempts = 5
@@ -44,8 +45,9 @@ const (
 	renameFileCommand               // 3
 	deleteFileCommand               // 4
 	moveFileCommand                 // 5
-	adminAuthCommand                // 6
-	addAdminCommand                 // 7
+	sendFileCommand                 // 6
+	adminAuthCommand                // 7
+	addAdminCommand                 // 8
 )
 
 // ClientConn describes client connection and contains opened directory by client
