@@ -23,6 +23,8 @@ public:
     QToolBar* toolBar;
     QPushButton* connectToServerButton;
     QPushButton* testButton;
+    QPushButton* sendFileButton;
+    QPushButton* refreshButton;
     QStatusBar* statusBar;
 
     const int width = 400;
@@ -63,13 +65,17 @@ public:
         toolBar->setObjectName("toolBar");
         toolBar->setMovable(false);
 
-        connectToServerButton = new QPushButton(toolBar);
-        connectToServerButton->setText("Connect");
+        connectToServerButton = new QPushButton("Connect", toolBar);
         toolBar->addWidget(connectToServerButton);
 
-        testButton = new QPushButton(toolBar);
-        testButton->setText("Test Request");
+        refreshButton = new QPushButton("Refresh", toolBar);
+        toolBar->addWidget(refreshButton);
+
+        testButton = new QPushButton("Test Request", toolBar);
         toolBar->addWidget(testButton);
+
+        sendFileButton = new QPushButton("Send file", toolBar);
+        toolBar->addWidget(sendFileButton);
 
         mainWindow->addToolBar(toolBar);
         mainWindow->setCentralWidget(centralWidget);
