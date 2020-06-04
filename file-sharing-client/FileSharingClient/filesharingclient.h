@@ -3,6 +3,7 @@
 
 #include <QMainWindow>
 #include <QEvent>
+#include <unordered_map>
 
 #include "ui_main.h"
 #include "TcpClient/tcpclient.h"
@@ -14,8 +15,9 @@ enum struct Command : u_char {
     renameFileCommand,               // 3
     deleteFileCommand,               // 4
     moveFileCommand,                 // 5
-    adminAuthCommand,                // 6
-    addAdminCommand                  // 7
+    sendFileCommand,                 // 6
+    adminAuthCommand,                // 7
+    addAdminCommand                  // 8
 };
 
 enum class Response : u_char {
@@ -34,7 +36,7 @@ class FileSharingClient : public QMainWindow {
 private:
     TcpClient tcpClient;
 
-    bool gotSecretKey = false;
+//    bool gotSecretKey = false;
 
     char* mainBuffer = nullptr;
     UI::Ui_Main* ui = nullptr;
@@ -50,6 +52,7 @@ private:
 
     void showFileList(const u_char* rawFileList, size_t length);
     void downloadFile(const u_char* rawFileInfo, size_t length);
+    void sendFile(const u_char* rawFileInfo, size_t length);
 
     void renameFile(const QString& oldName, const QString& newName);
 
@@ -64,6 +67,7 @@ private slots:
 
     void showContextMenuSlot(const QPoint& p);
     void changeDirOrDownloadSlot(int row, bool fromContextMenu = false);
+    void sendFileToServerSlot();
     void getFileListRequestSlot();
     void showRenamingLineSlot();
     void renameFileRequestSlot();

@@ -27,7 +27,7 @@ void DownloadFileTask::run() {
     qDebug() << "port:" << m_port;
     char buffer[BUFFER_FILE_SIZE];
     QByteArray b_cache;
-    b_cache.reserve(BUFFER_FILE_SIZE);
+//    b_cache.reserve(BUFFER_FILE_SIZE);
 
     TcpClient socket;
 
@@ -126,14 +126,16 @@ void DownloadFileTask::run() {
     QDataStream fileStream(&file);
     QByteArray decryptedData;
 
-    qDebug() << "getting file...";
-    while (socket.waitForReadyRead(1200)) {
-        auto bytesRead = socket.read(buffer, BUFFER_FILE_SIZE);
+    qint64 total = 0;
 
+    qDebug() << "getting file...";
+
+    while (socket.waitForReadyRead(3000)) {
+        auto bytesRead = socket.read(buffer, BUFFER_FILE_SIZE);
+        total += bytesRead;
 
         QByteArray tmpBuffer;
         tmpBuffer.append(b_cache, b_cache.length()).append(buffer, bytesRead);
-
 
         qDebug() << "bytesRead:" << bytesRead
                  << "\tcache.length():" << b_cache.length()
@@ -159,10 +161,10 @@ void DownloadFileTask::run() {
             qDebug() << "written:" << written;
         }
 
-        b_cache.clear();
         auto tmpLen = b_cache.length();
+        b_cache.clear();
         b_cache.append(tmpBuffer.data() + parts*BUFFER_FILE_SIZE, tmpBuffer.length() - parts*BUFFER_FILE_SIZE);
-        qDebug() << "b_cache.length():[old][new]:" << tmpLen << b_cache.length();
+        qDebug() << "------------b_cache.length():[old][new]:" << tmpLen << b_cache.length();
     }
 
     auto lastRead = socket.read(buffer, BUFFER_FILE_SIZE);
@@ -172,12 +174,33 @@ void DownloadFileTask::run() {
         b_cache.append(buffer, lastRead);
     }
 
+    total += lastRead;
+    qDebug() << "total:" << total;
+    qDebug() << "cache length before last decrypting:" << b_cache.length();
+
+    auto parts = b_cache.length() / BUFFER_FILE_SIZE;
+    qDebug() << "LAST PARTS:" << parts;
+    for (int i = 0; i < parts; ++i) {
+        try {
+            decryptedData = socket.decryptData(reinterpret_cast<const u_char*>(b_cache.data()) + i * BUFFER_FILE_SIZE,
+                                               BUFFER_FILE_SIZE);
+        } catch (const std::exception& ex) {
+            qDebug() << "File decryption exception in cycle:" << ex.what();
+            emit error("Can't decrypt last part of file information in cycle");
+            return;
+        }
+        fileStream.writeRawData(decryptedData.data(), decryptedData.length());
+    }
+
+    qDebug() << "b_cache.length():" << b_cache.length()
+             << "\tparts*BFS:" << parts*BUFFER_FILE_SIZE
+             << "\tlength - parts*BFS:" << b_cache.length() - parts * BUFFER_FILE_SIZE;
     try {
-        qDebug() << "cache length before last decrypting:" << b_cache.length();
-        decryptedData = socket.decryptData(reinterpret_cast<const u_char*>(b_cache.data()), b_cache.length());
+        decryptedData = socket.decryptData(reinterpret_cast<const u_char*>(b_cache.data()) + parts * BUFFER_FILE_SIZE,
+                                           b_cache.length() - parts * BUFFER_FILE_SIZE);
     } catch (const std::exception& ex) {
-        qDebug() << "File decryption exception:" << ex.what();
-        emit error("Can't decrypt last part of file information");
+        qDebug() << "File decryption of last part exception";
+        emit error("Can't decrpyt last part of file");
         return;
     }
     fileStream.writeRawData(decryptedData.data(), decryptedData.length());

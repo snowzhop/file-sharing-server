@@ -3,6 +3,7 @@
 #include "TcpClient/downloadfiletask.h"
 #include "MinorDialogs/ServerInfoDialog/serverinfodialog.h"
 #include "Widgets/RenamingLine/renamingline.h"
+#include "TcpClient/sendfiletask.h"
 
 #include <QDebug>
 #include <QThreadPool>
@@ -12,6 +13,7 @@
 #include <QMessageBox>
 #include <QFileDialog>
 
+#include <algorithm>
 #include <iostream>
 
 FileSharingClient::FileSharingClient(QWidget *parent)
@@ -136,6 +138,9 @@ void FileSharingClient::establishConnectionSlot(const QString& serverAddr, u_sho
             connect(ui->tableWidget, &MainTableWidget::dropRowSignal, this, &FileSharingClient::moveFileRequestSlot);
             connect(ui->tableWidget, &QTableWidget::customContextMenuRequested, this, &FileSharingClient::showContextMenuSlot);
 
+            connect(ui->sendFileButton, &QPushButton::clicked, this, &FileSharingClient::sendFileToServerSlot);
+            connect(ui->refreshButton, &QPushButton::clicked, this, &FileSharingClient::getFileListRequestSlot);
+
             connect(&tcpClient, &TcpClient::readyRead, this, &FileSharingClient::readyReadSlot);
 
             getFileListRequestSlot();
@@ -188,8 +193,6 @@ void FileSharingClient::readyReadSlot() {
 
 void FileSharingClient::testRequestSlot() {
     qDebug() << "test request slot";
-    RenamingLine* renamingLine = reinterpret_cast<RenamingLine*>(sender());
-    renamingLine->deleteLater();
 }
 
 /* ---- REQUEST CREATING FUNCTIONS ---- */
@@ -240,10 +243,10 @@ void FileSharingClient::showRenamingLineSlot() {
 
     int row = ui->tableWidget->rowViewportPosition(items[0]->row())
               + renamingLine->height()
-              + ui->tableWidget->rowHeight(items[0]->row()) * 2;
-    int col = ui->tableWidget->columnViewportPosition(items[0]->column());
+              + ui->tableWidget->rowHeight(items[0]->row()) * 2 + 2;
+    int col = ui->tableWidget->columnViewportPosition(items[0]->column()) + 2;
 
-    renamingLine->resize(ui->tableWidget->columnWidth(0), renamingLine->height());
+    renamingLine->resize(ui->tableWidget->columnWidth(0), ui->tableWidget->rowHeight(0));
     renamingLine->move(ui->tableWidget->mapToParent(QPoint(col, row)));
 
     connect(renamingLine, &QLineEdit::returnPressed, this, &FileSharingClient::renameFileRequestSlot);
@@ -342,6 +345,32 @@ void FileSharingClient::changeDirOrDownloadSlot(int row, bool fromContextMenu) {
     }
 }
 
+void FileSharingClient::sendFileToServerSlot() {
+    QString fileName = QFileDialog::getOpenFileName(this, "Choose file", "/home");
+
+    qDebug() << "choosen file:" << fileName;
+    if (fileName.length() > 0) {
+        QString shortFileName(fileName.data() + fileName.lastIndexOf('/') + 1);
+
+        qDebug() << "ShortFileName:" << shortFileName << "\tLength:" << shortFileName.length();
+
+        QByteArray request;
+        QDataStream stream(&request, QIODevice::WriteOnly);
+        stream << static_cast<u_char>(Command::sendFileCommand);
+        stream.writeRawData(getAuthToken(), 4);
+        stream.writeRawData(shortFileName.toStdString().c_str(), shortFileName.length());
+
+        try {
+            tcpClient.encryptAndSend(reinterpret_cast<const u_char*>(request.data()), request.length());
+        } catch (const std::exception& ex) {
+            qDebug() << "Send file to server excception:" << ex.what();
+        }
+
+        SendFileTask* sendTask = new SendFileTask(tcpClient.peerName(), fileName, this);
+        sendTask->setObjectName(shortFileName);
+    }
+}
+
 void FileSharingClient::moveFileRequestSlot(int rowNumber) {
     auto selectedFile = ui->tableWidget->selectedItems()[0]->data(Qt::DisplayRole).toString();
     auto targetFile = ui->tableWidget->item(rowNumber, 0)->data(Qt::DisplayRole).toString();
@@ -418,6 +447,11 @@ void FileSharingClient::responseProcessing(const u_char *data, size_t length) {
                 }
                 case Command::downloadFileCommand: {
                     downloadFile(data+2, length-2);
+                    break;
+                }
+                case Command::sendFileCommand: {
+                    sendFile(data+2, length-2);
+                    break;
                 }
                 default:
                 {}
@@ -498,4 +532,24 @@ void FileSharingClient::downloadFile(const u_char *rawFileInfo, size_t length) {
     downloadTask->setAutoDelete(true);
     QThreadPool::globalInstance()->start(downloadTask);
 
+}
+
+void FileSharingClient::sendFile(const u_char *rawFileInfo, size_t length) {
+    qDebug() << "sendFile() ---";
+    QByteArray fileInfo;
+    QDataStream stream(&fileInfo, QIODevice::WriteOnly);
+    stream.writeRawData(reinterpret_cast<const char*>(rawFileInfo), length);
+
+    auto fileInfoList = fileInfo.split('#');
+
+    QString fileName = fileInfoList[0];
+    u_short port  = fileInfoList[1].toUShort(nullptr, 10);
+
+    SendFileTask* sendTask = this->findChild<SendFileTask*>(fileName);
+    connect(sendTask, &SendFileTask::information, this, &FileSharingClient::infoProcessingSlot);
+    connect(sendTask, &SendFileTask::error, this, &FileSharingClient::errorProcessingSlot);
+
+    sendTask->setPort(port);
+
+    QThreadPool::globalInstance()->start(sendTask);
 }
